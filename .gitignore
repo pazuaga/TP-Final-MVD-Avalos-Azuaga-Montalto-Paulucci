@@ -47,3 +47,13 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Credenciales -- NUNCA subir
+.Renviron
+
+# Datos crudos -- pueden ser pesados; cada uno los baja localmente
+data/raw/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
