@@ -33,8 +33,3 @@ probabilidad de condenar violaciones de DDHH en votaciones de la ONU?
 - `qmd/` — notebooks de Quarto, uno por etapa.
 - `output/figures/` — gráficos exportados.
 
-## Cómo correr el código
-
-> Para esta primera entrega ninguna fuente requiere API key. El archivo
-> `.Renviron` está preparado por si en el futuro se agregan fuentes
-> autenticadas.
