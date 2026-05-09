@@ -1,0 +1,83 @@
+---
+title: "Limpieza y construcción del dataset"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: load-packages
+
+library(tidyverse)   # manipulación de datos 
+library(here)        # rutas relativas
+library(countrycode) # estandarización de códigos de país
+library(naniar)      # manejo de valores faltantes 
+library(skimr)       # inspección rápida de datos
+```
+
+```{r}
+#| label: cargar-datos
+
+# Cargamos los 5 archivos .rds generados por 01_importacion.qmd
+# readRDS() visto en scripting.qmd
+wb_raw        <- readRDS(here("data/raw/wb_indicators_raw.rds"))
+unvotes_raw   <- readRDS(here("data/raw/unvotes_raw.rds"))
+rollcalls_raw <- readRDS(here("data/raw/un_rollcalls_raw.rds"))
+issues_raw    <- readRDS(here("data/raw/un_issues_raw.rds"))
+atlas_raw     <- readRDS(here("data/raw/atlas_trade_raw.rds"))
+```
+
+En esta sección cargamos los cinco archivos de datos crudos generados en la etapa de importación. Cada uno corresponde a una de las tres fuentes utilizadas: el Banco Mundial, los datos de votaciones de la ONU (Voeten et al.) y el Atlas of Economic Complexity.
+
+## Limpieza: Banco Mundial
+
+Seleccionamos las columnas relevantes, filtramos el período 1995-2016 y renombramos las variables para que sean más legibles.
+
+```{r}
+#| label: limpiar-banco-mundial
+
+# Seleccionamos columnas relevantes y filtramos el período de análisis
+# filter(), select(), rename() vistos en 02_DataWrangling.qmd
+wb_clean <- wb_raw |>
+  filter(date >= 1995, date <= 2016) |>
+  select(
+    iso3c,
+    country,
+    year = date,
+    gdp = NY.GDP.MKTP.CD,
+    gdp_per_capita = NY.GDP.PCAP.CD,
+    population = SP.POP.TOTL,
+    total_exports = NE.EXP.GNFS.CD
+  )
+
+glimpse(wb_clean)
+```
+
+## Limpieza: Votaciones ONU
+
+Unimos los tres tibbles de UN Votes, filtramos únicamente las resoluciones clasificadas como "Human rights" y recodificamos los votos.
+
+```{r}
+#| label: limpiar-unvotes
+
+# Unimos los tres tibbles por rcid (id de resolución)
+# left_join() visto en 02_DataWrangling.qmd
+votes_hr <- unvotes_raw |>
+  left_join(issues_raw, by = "rcid") |>
+  left_join(rollcalls_raw, by = "rcid") |>
+  filter(issue == "Human rights") |>
+  filter(year(date) >= 1995, year(date) <= 2016) |>
+  mutate(
+    year = year(date),
+    # Recodificamos los votos a texto legible
+    # case_when() visto en 02_DataWrangling.qmd
+    voto = case_when(
+      vote == "yes"     ~ "yes",
+      vote == "no"      ~ "no",
+      vote == "abstain" ~ "abstain",
+      TRUE              ~ NA_character_
+    )
+  ) |>
+  filter(!is.na(voto))
+
+glimpse(votes_hr)
+```
