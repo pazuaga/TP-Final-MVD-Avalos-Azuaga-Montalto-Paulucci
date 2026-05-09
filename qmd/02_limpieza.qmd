@@ -18,7 +18,6 @@ library(skimr)       # inspección rápida de datos
 #| label: cargar-datos
 
 # Cargamos los 5 archivos .rds generados por 01_importacion.qmd
-# readRDS() visto en scripting.qmd
 wb_raw        <- readRDS(here("data/raw/wb_indicators_raw.rds"))
 unvotes_raw   <- readRDS(here("data/raw/unvotes_raw.rds"))
 rollcalls_raw <- readRDS(here("data/raw/un_rollcalls_raw.rds"))
@@ -36,7 +35,6 @@ Seleccionamos las columnas relevantes, filtramos el período 1995-2016 y renombr
 #| label: limpiar-banco-mundial
 
 # Seleccionamos columnas relevantes y filtramos el período de análisis
-# filter(), select(), rename() vistos en 02_DataWrangling.qmd
 wb_clean <- wb_raw |>
   filter(date >= 1995, date <= 2016) |>
   select(
@@ -46,8 +44,7 @@ wb_clean <- wb_raw |>
     gdp = NY.GDP.MKTP.CD,
     gdp_per_capita = NY.GDP.PCAP.CD,
     population = SP.POP.TOTL,
-    total_exports = NE.EXP.GNFS.CD
-  )
+    total_exports = NE.EXP.GNFS.CD)
 
 glimpse(wb_clean)
 ```
@@ -60,7 +57,6 @@ Unimos los tres tibbles de UN Votes, filtramos únicamente las resoluciones clas
 #| label: limpiar-unvotes
 
 # Unimos los tres tibbles por rcid (id de resolución)
-# left_join() visto en 02_DataWrangling.qmd
 votes_hr <- unvotes_raw |>
   left_join(issues_raw, by = "rcid") |>
   left_join(rollcalls_raw, by = "rcid") |>
@@ -69,15 +65,101 @@ votes_hr <- unvotes_raw |>
   mutate(
     year = year(date),
     # Recodificamos los votos a texto legible
-    # case_when() visto en 02_DataWrangling.qmd
     voto = case_when(
       vote == "yes"     ~ "yes",
       vote == "no"      ~ "no",
       vote == "abstain" ~ "abstain",
       TRUE              ~ NA_character_
-    )
-  ) |>
+    )) |>
   filter(!is.na(voto))
 
 glimpse(votes_hr)
+```
+
+## Limpieza: Atlas of Economic Complexity
+
+Filtramos únicamente los flujos comerciales hacia y desde China, y agregamos por país-año sumando exportaciones e importaciones.
+
+```{r}
+#| label: limpiar-atlas
+
+# Filtramos flujos comerciales con China y agregamos por país-año
+atlas_china <- atlas_raw |>
+  filter(location_code == "CHN" | partner_code == "CHN") |>
+  mutate(
+    iso3c = if_else(location_code == "CHN", partner_code, location_code),
+    year  = as.integer(year)) |>
+  filter(year >= 1995, year <= 2016) |>
+  group_by(iso3c, year) |>
+  summarise(
+    exports_to_china   = sum(export_value, na.rm = TRUE),
+    imports_from_china = sum(import_value, na.rm = TRUE),
+    .groups = "drop")
+
+glimpse(atlas_china)
+```
+
+## Agregación de votos por país-año
+
+Contamos los votos "yes", "no" y "abstain" por país y año, y estandarizamos los códigos de país a ISO3 para poder hacer el join con las otras fuentes.
+
+```{r}
+#| label: agregar-votos
+
+# Agregamos votos por país-año
+votos_agregados <- votes_hr |>
+  group_by(country_code, year) |>
+  summarise(
+    n_hr_resolutions = n_distinct(rcid),
+    n_yes     = sum(voto == "yes"),
+    n_no      = sum(voto == "no"),
+    n_abstain = sum(voto == "abstain"),
+    .groups = "drop") |>
+  mutate(
+    # Porcentaje de votos yes sobre total
+    pct_yes = n_yes / (n_yes + n_no + n_abstain),
+    # Convertimos ISO2 a ISO3 con countrycode
+    iso3c = countrycode(country_code, origin = "iso2c", destination = "iso3c")) |>
+  filter(!is.na(iso3c))
+
+glimpse(votos_agregados)
+```
+
+## Join final y construcción del dataset
+
+Combinamos las tres fuentes a nivel país-año y construimos el índice de dependencia comercial con China como la suma de exportaciones e importaciones con China dividida por el PBI
+
+```{r}
+#| label: join-final
+
+# Combinamos las tres fuentes con left_join por iso3c y year
+# left_join() visto en 02_DataWrangling.qmd
+dataset_final <- wb_clean |>
+  left_join(atlas_china,     by = c("iso3c", "year")) |>
+  left_join(votos_agregados, by = c("iso3c", "year")) |>
+  mutate(
+    # Índice de dependencia comercial con China
+    # (exportaciones + importaciones con China) / PBI
+    china_dependence = (exports_to_china + imports_from_china) / gdp) |>
+  filter(!is.na(gdp), !is.na(iso3c), !is.na(year))
+
+glimpse(dataset_final)
+```
+
+## Guardar dataset final
+
+Guardamos el dataset combinado y limpio en data/processed/ para que la siguiente etapa pueda usarlo directamente.
+
+```{r}
+#| label: guardar-dataset
+
+# Creamos la carpeta processed si no existe
+# dir.create() visto en scripting.qmd
+dir.create(here("data/processed"), recursive = TRUE, showWarnings = FALSE)
+
+# Guardamos el dataset final en formato .rds
+# saveRDS() visto en scripting.qmd
+saveRDS(dataset_final, here("data/processed/dataset_final.rds"))
+
+cat("Dataset guardado con", nrow(dataset_final), "filas y", ncol(dataset_final), "columnas.")
 ```
