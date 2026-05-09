@@ -1,0 +1,192 @@
+---
+title: "Importación de datos crudos"
+date: 2026-05-08
+lang: es
+format:
+  html:
+    toc: true
+    toc-location: left
+    embed-resources: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+#| label: load-packages
+#| include: false
+
+# Paquetes para esta etapa
+library(tidyverse)   # manipulación general
+library(here)        # rutas relativas al proyecto 
+library(httr2)       # consumo de APIs 
+library(wbstats)     # wrapper del Banco Mundial 
+library(unvotes)     # wrapper de los votos de la AG de la ONU (Voeten)
+library(haven)
+```
+
+Este archivo descarga las tres fuentes de datos crudas y las guarda en `data/raw/`. La idea es correrlo una sola vez al inicio del proyecto; después la limpieza vive en `02_limpieza.qmd`.
+
+## Fuente 1: Banco Mundial
+
+Bajamos cuatro indicadores macroeconómicos para todos los países, entre 1990 y 2023, usando el wrapper `wbstats`
+
+```{r}
+#| label: descargar-banco-mundial
+#| cache: true
+
+# Indicadores del Banco Mundial que vamos a usar.
+# Los códigos los sacamos del navegador de indicadores del BM:
+# - NY.GDP.MKTP.CD  : PBI total en USD corrientes
+# - NY.GDP.PCAP.CD  : PBI per cápita en USD corrientes
+# - SP.POP.TOTL     : Población total
+# - NE.EXP.GNFS.CD  : Exportaciones de bienes y servicios (USD corrientes)
+indicadores_bm <- c(
+  "NY.GDP.MKTP.CD",
+  "NY.GDP.PCAP.CD",
+  "SP.POP.TOTL",
+  "NE.EXP.GNFS.CD"
+)
+
+# Pegamos a la API una sola vez y nos guardamos el tibble crudo.
+# El argumento country = "countries_only" excluye agregados regionales
+# (e.g. "World", "Latin America"); solo trae países individuales.
+wb_raw <- wb_data(
+  indicator  = indicadores_bm,
+  country    = "countries_only",
+  start_date = 1990,
+  end_date   = 2023
+)
+```
+
+Una primera mirada para chequear que todo bajó bien:
+
+```{r}
+#| label: inspeccion-banco-mundial
+
+# glimpse muestra cada columna y su tipo 
+glimpse(wb_raw)
+```
+
+Guardamos el resultado crudo en `data/raw/` para no tener que volver a pegarle a la API en cada corrida del proyecto.
+
+```{r}
+#| label: guardar-banco-mundial
+
+saveRDS(wb_raw, here("data/raw/wb_indicators_raw.rds"))
+```
+
+## Fuente 2: UN Voting Data (paquete `unvotes`)
+
+Utilizamos el paquete `unvotes`, que envuelve los mismos datos crudos publicados originalmente por Voeten en Harvard Dataverse (1946 a \~2016). La lógica es idéntica a `wbstats`: un paquete que provee datos externos en forma de tibbles.
+
+```{r}
+#| label: cargar-unvotes
+#| message: false
+
+# Cargamos el paquete; nos da tres tibbles separados:
+# - un_votes:           cada fila es un voto país-resolución.
+# - un_roll_calls:      metadata de cada resolución (fecha, descripción).
+# - un_roll_call_issues: clasificación temática (incluye "Human rights").
+library(unvotes)
+
+# Los traemos a variables locales con nombres más explícitos.
+unvotes_raw  <- un_votes
+unrolls_raw  <- un_roll_calls
+unissues_raw <- un_roll_call_issues
+```
+
+Una mirada rápida a cada tabla:
+
+```{r}
+#| label: inspeccion-unvotes
+
+glimpse(unvotes_raw)
+glimpse(unrolls_raw)
+glimpse(unissues_raw)
+```
+
+Guardamos las tres tablas crudas en `data/raw/`. Luego las vamos a unir con `left_join` (clase 02) y filtrar por la categoría "Human rights".
+
+```{r}
+#| label: guardar-unvotes
+
+saveRDS(unvotes_raw,  here("data/raw/unvotes_raw.rds"))
+saveRDS(unrolls_raw,  here("data/raw/un_rollcalls_raw.rds"))
+saveRDS(unissues_raw, here("data/raw/un_issues_raw.rds"))
+```
+
+## Fuente 3: Atlas of Economic Complexity (comercio bilateral)
+
+Bajamos el archivo `country_partner_hsproductsection_year.zip` del bucket S3 público del Atlas of Economic Complexity (Harvard CID, 1995-2017). Contiene comercio bilateral entre todos los países, desagregado por sección de producto. Luego vamos a agregarlo a totales país-país-año y filtrar por flujos con China.
+
+```{r}
+#| label: descargar-atlas
+#| cache: true
+
+# Cargamos haven para leer archivos Stata (.dta) que es el formato
+# en el que el Atlas distribuye sus archivos.
+library(haven)
+
+# URL pública del archivo en el bucket S3 del Atlas.
+# Acceso directo, sin registro ni API key.
+url_atlas <- "https://intl-atlas-downloads.s3.amazonaws.com/country_partner_hsproductsection_year.zip"
+
+# Ruta local donde vamos a guardar el zip descargado.
+ruta_zip <- here("data/raw/atlas_trade.zip")
+
+# Descarga directa con httr2 (clase 04). req_perform(path = ...) escribe
+# la respuesta directo a disco, sin meter el archivo en memoria. Le damos
+# 10 minutos de timeout porque son 94 MB.
+request(url_atlas) |>
+  req_timeout(600) |>
+  req_perform(path = ruta_zip)
+```
+
+```{r}
+#| label: descomprimir-atlas
+
+# Descomprimimos el zip dentro de data/raw/. unzip() es base de R.
+# Antes de extraer, listamos qué contiene para ver el nombre exacto.
+unzip(ruta_zip, list = TRUE)
+
+# Extraemos
+unzip(ruta_zip, exdir = here("data/raw"))
+
+# Vemos qué archivos quedaron en data/raw/
+list.files(here("data/raw"), pattern = "country_partner")
+```
+
+```{r}
+#| label: leer-atlas
+#| cache: true
+
+# Buscamos el archivo descomprimido (puede ser .dta o .csv según la
+# versión que serviva el bucket). Tomamos el primero que match.
+archivo_atlas <- list.files(
+  here("data/raw"),
+  pattern = "country_partner_hsproductsection_year.*\\.(dta|csv|tab)$",
+  full.names = TRUE
+)[1]
+
+# Leemos el archivo según su extensión.
+# read_dta es de haven; read_csv es de readr (clase 02).
+if (grepl("\\.dta$", archivo_atlas)) {
+  atlas_raw <- read_dta(archivo_atlas)
+} else {
+  atlas_raw <- read_csv(archivo_atlas, show_col_types = FALSE)
+}
+
+# Inspección: tiene que tener columnas como location_code, partner_code,
+# year, export_value, import_value y alguna de sección de producto.
+glimpse(atlas_raw)
+```
+
+Guardamos el resultado crudo en `.rds` para no tener que repetir la descarga ni la descompresión en cada corrida del proyecto.
+
+```{r}
+#| label: guardar-atlas
+
+saveRDS(atlas_raw, here("data/raw/atlas_trade_raw.rds"))
+```
+
+## 
