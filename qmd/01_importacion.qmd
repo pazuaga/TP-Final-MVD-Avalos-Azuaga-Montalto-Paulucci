@@ -56,6 +56,8 @@ wb_raw <- wb_data(
   start_date = 1990,
   end_date   = 2023
 )
+#si les llega a salir error que no se crea la carpeta, corran la linea de abajo de abajo y depsues vuelvan a correr el chunk.
+#dir.create(here::here("data/raw"), recursive = TRUE, showWarnings = FALSE)
 ```
 
 Una primera mirada para chequear que todo bajó bien:
