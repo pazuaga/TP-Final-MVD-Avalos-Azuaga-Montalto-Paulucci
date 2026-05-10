@@ -109,7 +109,7 @@ tokens_lematizados <- tokens_limpios %>%
   left_join(anotaciones, by = "doc_id") %>%
   select(-word) %>%
   filter(nchar(trimws(lemma)) > 2,
-         !lemma %in% c("re", "de", "en", "al"))
+         !lemma %in% c("re", "de", "en", "al", "resol"))
 ```
 #Calculamos el TF-IDF usando count y luego los agrupamos usando group_by para ver los terminos más distintivos de cada grupo.
 ```{r}
@@ -125,7 +125,7 @@ tfidf %>%
   print(n = 20)
 
 ```
-#Caluclamos el Log Odds ratio
+#Calculamos el Log Odds ratio
 ```{r}
 log_odds <- tokens_lematizados %>%
   count(grupo, lemma) %>%
@@ -136,6 +136,24 @@ log_odds %>%
   group_by(grupo) %>% 
   slice_max(log_odds_weighted, n = 10) %>% 
   print(n = 20)
+```
+#Visualizamos los datos obtenidos
+```{r}
+log_odds %>%
+  group_by(grupo) %>%
+  slice_max(log_odds_weighted, n = 15) %>%
+  ungroup() %>%
+  mutate(lemma = reorder(lemma, log_odds_weighted)) %>%
+  ggplot(aes(x = log_odds_weighted, y = lemma, fill = grupo)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~grupo, scales = "free_y") +
+  labs(
+    title = "Términos más distintivos por posición del bloque dependiente de China",
+    subtitle = "Resoluciones de DDHH en la Asamblea General de la ONU",
+    x = "Log Odds Ratio ponderado",
+    y = NULL
+  ) +
+  theme_minimal()
 ```
 
 
