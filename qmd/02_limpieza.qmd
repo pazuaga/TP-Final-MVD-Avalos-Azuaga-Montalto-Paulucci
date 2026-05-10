@@ -58,7 +58,7 @@ Unimos los tres tibbles de UN Votes, filtramos únicamente las resoluciones clas
 
 # Unimos los tres tibbles por rcid (id de resolución)
 votes_hr <- unvotes_raw |>
-  left_join(issues_raw, by = "rcid") |>
+  left_join(issues_raw, by = "rcid", relationship = "many-to-many") |>
   left_join(rollcalls_raw, by = "rcid") |>
   filter(issue == "Human rights") |>
   filter(year(date) >= 1995, year(date) <= 2016) |>
@@ -141,7 +141,6 @@ Combinamos las tres fuentes a nivel país-año y construimos el índice de depen
 #| label: join-final
 
 # Combinamos las tres fuentes con left_join por iso3c y year
-# left_join() visto en 02_DataWrangling.qmd
 dataset_final <- wb_clean |>
   left_join(atlas_china,     by = c("iso3c", "year")) |>
   left_join(votos_agregados, by = c("iso3c", "year")) |>
