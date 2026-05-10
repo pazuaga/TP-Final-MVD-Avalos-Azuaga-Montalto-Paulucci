@@ -11,7 +11,8 @@ library(tidyverse)
 library(here)
 library(tidytext)   
 library(udpipe)     
-library(tidylo)     
+library(tidylo)  
+library(countrycode)
 ```
 
 #Importamos y leemos los datos para hacer el procesamiento
@@ -40,5 +41,42 @@ rcid_ddhh <- un_issues %>%
 length(rcid_ddhh)  # cuántas resoluciones de DDHH hay
 
 ```
+#Ahora clasificamos cada resolución considerado cómo voto cada bloque, es decir, si: Si, No o Abstención. Luego, calcula qué proporción del bloque votó No o Abstención. Si es 50% o más, la resolución va al grupo "rechaza_abstiene", si no, a "apoya".
+```{r}
+# Cómo votó el bloque de alta dependencia en cada resolución
+votos_bloque <- un_votes %>%
+  mutate(iso3c = countrycode(country_code, origin = "iso2c", destination = "iso3c")) %>%
+  filter(iso3c %in% paises_alta,
+         rcid %in% rcid_ddhh) %>%
+  group_by(rcid) %>%
+  summarise(
+    prop_no_abs = mean(vote %in% c("no", "abstain"), na.rm = TRUE)
+  ) %>%
+  mutate(
+    grupo = if_else(prop_no_abs >= 0.5, "rechaza_abstiene", "apoya")
+  )
 
+# Verificar cuántas resoluciones quedaron en cada grupo
+count(votos_bloque, grupo)
+```
+#Unimos los textos de las resoluciones con la clasificación.
+```{r}
+textos_clasificados <- un_rollcalls %>%
+  filter(rcid %in% rcid_ddhh) %>%
+  select(rcid, descr) %>%
+  inner_join(votos_bloque, by = "rcid")
+
+# Verificar
+glimpse(textos_clasificados)
+nrow(textos_clasificados)
+```
+#Ahora que tenemos la información agrupada, pasamos a la tokenización
+```{r}
+tokens <- textos_clasificados %>%
+  unnest_tokens(word, descr)
+
+# Verificar
+nrow(tokens)
+head(tokens)
+```
 
