@@ -82,19 +82,27 @@ Filtramos únicamente los flujos comerciales hacia y desde China, y agregamos po
 
 ```{r}
 #| label: limpiar-atlas
+# Separamos los flujos según el sentido correcto:
+# Cuando location_code != CHN: export_value = exportaciones del país a China
+# Cuando location_code == CHN: export_value = exportaciones de China al país
+# (osea, importaciones del país desde China)
 
-# Filtramos flujos comerciales con China y agregamos por país-año
-atlas_china <- atlas_raw |>
-  filter(location_code == "CHN" | partner_code == "CHN") |>
-  mutate(
-    iso3c = if_else(location_code == "CHN", partner_code, location_code),
-    year  = as.integer(year)) |>
+exports <- atlas_raw |>
+  filter(location_code != "CHN", partner_code == "CHN") |>
+  mutate(iso3c = location_code, year = as.integer(year)) |>
   filter(year >= 1995, year <= 2016) |>
   group_by(iso3c, year) |>
-  summarise(
-    exports_to_china   = sum(export_value, na.rm = TRUE),
-    imports_from_china = sum(import_value, na.rm = TRUE),
-    .groups = "drop")
+  summarise(exports_to_china = sum(export_value, na.rm = TRUE), .groups = "drop")
+
+imports <- atlas_raw |>
+  filter(location_code == "CHN", partner_code != "CHN") |>
+  mutate(iso3c = partner_code, year = as.integer(year)) |>
+  filter(year >= 1995, year <= 2016) |>
+  group_by(iso3c, year) |>
+  summarise(imports_from_china = sum(export_value, na.rm = TRUE), .groups = "drop")
+
+atlas_china <- exports |>
+  full_join(imports, by = c("iso3c", "year"))
 
 glimpse(atlas_china)
 ```
