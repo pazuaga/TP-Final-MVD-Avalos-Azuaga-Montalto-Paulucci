@@ -14,11 +14,31 @@ library(udpipe)
 library(tidylo)     
 ```
 
+#Importamos y leemos los datos para hacer el procesamiento
 ```{r}
 dataset_final <- readRDS(here("data/processed/dataset_final.rds"))
 un_rollcalls  <- readRDS(here("data/raw/un_rollcalls_raw.rds"))
 un_issues     <- readRDS(here("data/raw/un_issues_raw.rds"))
+un_votes     <- readRDS(here("data/raw/unvotes_raw.rds"))
 ```
 
+#Definimos qué países son "de alta dependencia" y luego filtramos las resoluciones para quedarnos solamente con las de DDHH.
+```{r}
+# 1. Definir umbral de alta dependencia (percentil 75, por ejemplo)
+umbral <- quantile(dataset_final$china_dependence, 0.75, na.rm = TRUE)
+
+# 2. Etiquetar países como alta o baja dependencia
+paises_alta <- dataset_final %>%
+  filter(china_dependence >= umbral) %>%
+  distinct(iso3c) %>%
+  pull(iso3c)
+# 3. Quedarse solo con los rcid de resoluciones de DDHH
+rcid_ddhh <- un_issues %>%
+  filter(issue == "Human rights") %>%
+  pull(rcid)
+
+length(rcid_ddhh)  # cuántas resoluciones de DDHH hay
+
+```
 
 
