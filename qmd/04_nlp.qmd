@@ -1,0 +1,24 @@
+---
+title: "Etapa 5 - Análisis NLP de resoluciones de DDHH"
+format: html
+editor: visual
+---
+
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(tidytext)   
+library(udpipe)     
+library(tidylo)     
+```
+
+```{r}
+dataset_final <- readRDS(here("data/processed/dataset_final.rds"))
+un_rollcalls  <- readRDS(here("data/raw/un_rollcalls_raw.rds"))
+un_issues     <- readRDS(here("data/raw/un_issues_raw.rds"))
+```
+
+
+
