@@ -1,0 +1,319 @@
+---
+title: "Análisis Exploratorio de Datos (EDA)"
+subtitle: "Etapa 4 — TP Final, Manejo y Visualización de Datos"
+author: "Inés Paulucci"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    number-sections: true
+    embed-resources: true
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+
+# Paquetes utilizados en este notebook.
+# Coherente con el bloque install.packages() del README del repo.
+library(tidyverse)  # manipulación + visualización (dplyr, ggplot2, etc.)
+library(here)       # rutas relativas portables (no usar setwd())
+library(skimr)      # skim() para inspección estadística rápida
+library(naniar)     # visualización y conteo de NAs
+```
+
+# Introducción
+
+Este notebook corresponde a la **Etapa 4 (Análisis Exploratorio de Datos)** del Trabajo Final de la materia *Manejo y Visualización de Datos* (UdeSA, 2026). Toma como insumo el dataset `data/processed/dataset_final.rds` producido por la Etapa 3 (limpieza y joins) y explora la distribución de las variables clave para responder a la pregunta de investigación del trabajo:
+
+> ¿Los países con mayor dependencia comercial con China tienen menos probabilidad de condenar violaciones de DDHH en votaciones de la ONU?
+
+La unidad de análisis es **país-año** para el período **1995-2016**. El EDA combina inspección numérica (con `glimpse()` y `skim()`) y visualización (`ggplot2`) para describir la distribución univariada de las variables principales, comparar el comportamiento entre grupos de países según su dependencia comercial con China, evaluar la evolución temporal y explorar la relación entre dependencia y comportamiento de voto.
+
+# Carga de datos
+
+```{r}
+#| label: cargar-datos
+
+# Lectura del dataset final producido por 02_limpieza.qmd
+# readRDS() preserva tipos de columna (a diferencia de read_csv())
+dataset <- readRDS(here("data", "processed", "dataset_final.rds"))
+```
+
+# Inspección general
+
+Antes de cualquier análisis, inspeccionamos la estructura del dataset y un resumen estadístico de todas las variables. Esto permite identificar a primera vista la cantidad de NAs por variable, los rangos plausibles y las distribuciones que requieren atención (asimetrías fuertes, outliers).
+
+```{r}
+#| label: glimpse
+
+# Estructura: tipos de columna, primeras observaciones de cada una
+glimpse(dataset)
+```
+
+```{r}
+#| label: skim
+
+# Resumen estadístico completo: n_missing, complete_rate, media, sd,
+# cuantiles y mini-histograma de cada variable numérica.
+skim(dataset)
+```
+
+El dataset tiene **`r nrow(dataset)` filas** (país-año) y **`r ncol(dataset)` columnas**. Tres variables son de tipo carácter (`iso3c`, `country`, `country_code`) y las trece restantes son numéricas. Las tasas de completitud se concentran en tres patrones:
+
+-   **100% de completitud** en las variables del Banco Mundial (`gdp`, `gdp_per_capita`, `population`) y los identificadores (`iso3c`, `country`, `year`).
+-   **\~94%** en las variables de comercio con China (`exports_to_china`, `imports_from_china`, `china_dependence`): faltan 287 observaciones, correspondientes a países sin datos en el Atlas of Economic Complexity.
+-   **\~88%** en las variables de votación de la ONU (`n_hr_resolutions`, `n_yes`, `n_no`, `n_abstain`, `pct_yes`, `country_code`): faltan 550 observaciones, correspondientes a países que no participaron de votaciones de DDHH ese año.
+
+# Distribución de la dependencia comercial con China
+
+La variable `china_dependence` es el indicador clave del análisis. Está definida como `(exports_to_china + imports_from_china) / gdp`, es decir, la suma del comercio bilateral con China expresada como fracción del PBI del país.
+
+```{r}
+#| label: hist-china-dependence-completo
+#| fig-cap: "Distribución de china_dependence (todos los datos)."
+
+# Histograma con todos los datos.
+# Filtramos los 287 NAs explícitamente (no son países "con dependencia 0",
+# son países sin datos en el Atlas).
+dataset |>
+  filter(!is.na(china_dependence)) |>
+  ggplot(aes(x = china_dependence)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribución de la dependencia comercial con China",
+    subtitle = "Suma de exportaciones e importaciones con China sobre PBI, 1995-2016",
+    x = "china_dependence",
+    y = "Frecuencia") +
+  theme_minimal()
+```
+
+La distribución es **fuertemente asimétrica a la derecha**, con la mayor parte de las observaciones concentradas cerca de cero y una cola muy larga. Existe al menos un outlier extremo con valor cercano a 39, varios órdenes de magnitud por encima de la masa principal de la distribución. Para visualizar la forma de la distribución sin la distorsión visual del outlier, replicamos el histograma filtrando los valores menores a 2 (sugerido en el handoff de la Etapa 3).
+
+```{r}
+#| label: hist-china-dependence-sin-outlier
+#| fig-cap: "Distribución de china_dependence excluyendo valores >= 2."
+
+# Histograma filtrando los valores extremos para apreciar la forma
+# de la distribución del grueso de los países.
+dataset |>
+  filter(!is.na(china_dependence), china_dependence < 2) |>
+  ggplot(aes(x = china_dependence)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribución de la dependencia comercial con China (sin outliers)",
+    subtitle = "Países con china_dependence < 2",
+    x = "china_dependence",
+    y = "Frecuencia") +
+  theme_minimal()
+```
+
+Aún excluyendo el outlier, la distribución sigue siendo asimétrica a la derecha: la mediana está en torno a `r round(median(dataset$china_dependence, na.rm = TRUE), 3)` y el percentil 75 en torno a `r round(quantile(dataset$china_dependence, 0.75, na.rm = TRUE), 3)`. La gran mayoría de los países-año tienen un comercio con China que representa menos del 10% de su PBI. Identificamos en la sección de inspección que el outlier corresponde a Marshall Islands (39.4 en 2016), lo cual es consistente con su rol de jurisdicción de banderas de conveniencia y comercio offshore: los flujos comerciales aparentes están enormemente inflados respecto a la economía doméstica.
+
+# Frecuencias de votos en resoluciones de DDHH
+
+Antes de cruzar la dependencia comercial con el comportamiento de voto, conviene tener una intuición de qué países son los que sistemáticamente votan en contra de las resoluciones de DDHH. Un voto "no" indica que el país rechaza la resolución (es decir, no condena la violación que ésta denuncia), por lo que la suma de votos "no" a lo largo del período es un proxy razonable de propensión a no condenar.
+
+```{r}
+#| label: top10-no
+#| message: false
+
+# Agregamos los votos por país a lo largo de todo el período (1995-2016)
+# y nos quedamos con los 10 países que más veces votaron "no" en
+# resoluciones de DDHH. slice_max() ordena descendente y corta en n.
+top10_no <- dataset |>
+  filter(!is.na(n_no)) |>
+  group_by(country) |>
+  summarise(
+    total_yes     = sum(n_yes,     na.rm = TRUE),
+    total_no      = sum(n_no,      na.rm = TRUE),
+    total_abstain = sum(n_abstain, na.rm = TRUE),
+    .groups = "drop") |>
+  slice_max(total_no, n = 10)
+
+knitr::kable(
+  top10_no,
+  caption = "Top 10 países por cantidad acumulada de votos 'no' en resoluciones de DDHH (1995-2016).",
+  col.names = c("País", "Total Yes", "Total No", "Total Abstain"))
+```
+
+La tabla se domina por **Estados Unidos**, con un total de votos "no" varias veces superior al del segundo país de la lista. Esto refleja un patrón ampliamente documentado en la literatura: Estados Unidos tiende a oponerse a resoluciones de DDHH cuando éstas apuntan a aliados estratégicos (Israel, en particular) o cuando interpreta que se desvían hacia agendas distintas a las que reconoce. Detrás aparecen un grupo más heterogéneo de países que combinan motivos diversos: algunos son frecuentemente señalados como objeto de las resoluciones (Israel), otros son potencias o aliados que sistemáticamente acompañan posiciones de Estados Unidos (Reino Unido, Australia, Canadá, países europeos), y otros mantienen posturas críticas frente al uso del marco de DDHH en el sistema de votación de la Asamblea General. La frecuencia de votos "no" no se distribuye uniformemente entre todos los países: está fuertemente concentrada.
+
+# Comparación entre grupos: alta vs. baja dependencia
+
+La consigna del TP requiere al menos una visualización comparativa entre grupos. Para construirla, dividimos los países-año en dos grupos según su valor de `china_dependence`: aquellos por encima de la mediana global (**alta dependencia**) y aquellos por debajo (**baja dependencia**). El uso de la mediana como punto de corte es deliberado: a diferencia de la media, no se ve afectado por el outlier de Marshall Islands. Para esta comparación se descartan las observaciones con `NA` en `china_dependence` (287 filas, países sin datos en el Atlas) o en `pct_yes` (550 filas, países sin votos de DDHH ese año).
+
+```{r}
+#| label: boxplot-grupos
+#| fig-cap: "Distribución del % de votos 'yes' en DDHH según dependencia comercial con China."
+
+# Construimos la variable de grupo a partir de la mediana de china_dependence,
+# después de filtrar las observaciones con NA en cualquiera de las dos
+# variables involucradas.
+dataset_grupos <- dataset |>
+  filter(!is.na(china_dependence), !is.na(pct_yes)) |>
+  mutate(
+    grupo = if_else(
+      china_dependence > median(china_dependence, na.rm = TRUE),
+      "Alta dependencia",
+      "Baja dependencia"))
+
+ggplot(dataset_grupos, aes(x = grupo, y = pct_yes, fill = grupo)) +
+  geom_boxplot(show.legend = FALSE) +
+  labs(
+    title = "Votos 'yes' en DDHH según dependencia comercial con China",
+    subtitle = "Países-año, 1995-2016. Corte por la mediana de china_dependence.",
+    x = "Grupo",
+    y = "% de votos 'yes'") +
+  theme_minimal()
+```
+
+```{r}
+#| label: medianas-por-grupo
+#| message: false
+
+# Resumen numérico que acompaña al boxplot.
+resumen_grupos <- dataset_grupos |>
+  group_by(grupo) |>
+  summarise(
+    n_obs           = n(),
+    mediana_pct_yes = median(pct_yes),
+    media_pct_yes   = mean(pct_yes),
+    .groups = "drop")
+
+knitr::kable(
+  resumen_grupos,
+  digits = 3,
+  caption = "Resumen de pct_yes por grupo de dependencia.",
+  col.names = c("Grupo", "N", "Mediana pct_yes", "Media pct_yes"))
+```
+
+El corte por la mediana implica una línea divisoria en `china_dependence ≈ `r round(median(dataset$china_dependence, na.rm = TRUE), 3)``. La comparación de las distribuciones sugiere que los países con **alta dependencia** comercial con China tienden a tener un porcentaje de votos "yes" en DDHH **más alto** que los países con baja dependencia. La diferencia es coherente con la pregunta de investigación, aunque su magnitud y significancia estadística requieren tests formales que exceden el alcance de un EDA. La interpretación causal tampoco es directa: la dependencia con China está correlacionada con otras variables (nivel de desarrollo, alineación geopolítica, región) que también influyen sobre el comportamiento de voto.
+
+# Evolución temporal
+
+Las visualizaciones anteriores son estáticas: agregan toda la ventana 1995-2016 en una sola distribución. Para detectar tendencias en el tiempo, calculamos el promedio anual de las dos variables principales y las graficamos por separado.
+
+```{r}
+#| label: serie-dependencia
+#| fig-cap: "Evolución de la dependencia comercial con China (promedio global, 1995-2016)."
+
+# Promedio global de china_dependence por año.
+# Filtramos NAs explícitamente; el outlier de Marshall Islands queda
+# incluido (dejarlo afuera distorsionaría la comparación entre años,
+# porque no aparece en todos).
+dataset |>
+  filter(!is.na(china_dependence)) |>
+  group_by(year) |>
+  summarise(dependencia_promedio = mean(china_dependence), .groups = "drop") |>
+  ggplot(aes(x = year, y = dependencia_promedio)) +
+  geom_line(color = "steelblue") +
+  geom_point(color = "steelblue") +
+  labs(
+    title = "Evolución de la dependencia comercial con China",
+    subtitle = "Promedio global por año, 1995-2016",
+    x = "Año",
+    y = "china_dependence (promedio global)") +
+  theme_minimal()
+```
+
+```{r}
+#| label: serie-pct-yes
+#| fig-cap: "Evolución del % de votos 'yes' en DDHH (promedio global, 1995-2016)."
+
+# Promedio global de pct_yes por año.
+dataset |>
+  filter(!is.na(pct_yes)) |>
+  group_by(year) |>
+  summarise(pct_yes_promedio = mean(pct_yes), .groups = "drop") |>
+  ggplot(aes(x = year, y = pct_yes_promedio)) +
+  geom_line(color = "darkorange") +
+  geom_point(color = "darkorange") +
+  labs(
+    title = "Evolución del % de votos 'yes' en DDHH",
+    subtitle = "Promedio global por año, 1995-2016",
+    x = "Año",
+    y = "% votos 'yes' (promedio global)") +
+  theme_minimal()
+```
+
+La serie de dependencia con China muestra una **tendencia creciente y monótona** a lo largo del período: el comercio bilateral con China ganó peso relativo en las economías del mundo de manera prácticamente continua entre 1995 y 2016. Esto es coherente con el ascenso de China como potencia comercial y su entrada a la OMC en 2001. La serie de votos "yes" en DDHH, en cambio, no muestra una tendencia tan clara: oscila en un rango más estrecho a lo largo del período. La coexistencia de una tendencia creciente en una serie y una serie estable o cíclica en la otra implica que cualquier análisis que compare las dos a lo largo del tiempo debe controlar por año o por tendencia, ya que la sola correlación temporal puede generar asociaciones espurias.
+
+# Relación entre dependencia y comportamiento de voto
+
+Las secciones anteriores miraron la dependencia y los votos por separado o promediadas. Para evaluar la relación bivariada al nivel observación (país-año), graficamos un diagrama de dispersión con todos los puntos y le superponemos una recta de regresión lineal. Replicamos el gráfico filtrando el outlier para apreciar la relación en el rango donde se concentran los datos.
+
+```{r}
+#| label: scatter-completo
+#| fig-cap: "Dispersión de china_dependence vs. pct_yes (todos los datos)."
+#| message: false
+
+# Dispersión con todos los datos. alpha=0.3 para que se distinga la
+# densidad de los puntos donde se acumulan; method='lm' para una
+# regresión lineal simple (la materia no cubre métodos no-paramétricos).
+dataset |>
+  filter(!is.na(china_dependence), !is.na(pct_yes)) |>
+  ggplot(aes(x = china_dependence, y = pct_yes)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "steelblue") +
+  labs(
+    title = "Dependencia con China vs. % votos 'yes' en DDHH",
+    subtitle = "Países-año, 1995-2016",
+    x = "china_dependence",
+    y = "% votos 'yes'") +
+  theme_minimal()
+```
+
+```{r}
+#| label: scatter-sin-outlier
+#| fig-cap: "Dispersión de china_dependence vs. pct_yes excluyendo china_dependence >= 2."
+#| message: false
+
+# Mismo gráfico, filtrando el outlier para que la nube de puntos
+# del grueso de los países sea visible.
+dataset |>
+  filter(!is.na(china_dependence), !is.na(pct_yes), china_dependence < 2) |>
+  ggplot(aes(x = china_dependence, y = pct_yes)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", color = "steelblue") +
+  labs(
+    title = "Dependencia con China vs. % votos 'yes' en DDHH (sin outliers)",
+    subtitle = "Países-año con china_dependence < 2",
+    x = "china_dependence",
+    y = "% votos 'yes'") +
+  theme_minimal()
+```
+
+La nube de puntos del scatter sin outliers muestra la **alta variabilidad de `pct_yes` para cualquier nivel de dependencia**: para un mismo valor de `china_dependence`, el porcentaje de votos "yes" puede ir de 0 a 1. La recta de regresión lineal tiene **pendiente positiva**, lo cual es coherente con la diferencia de medianas observada en el boxplot: a mayor dependencia, en promedio un poco más de votos "yes". Sin embargo, la dispersión vertical en torno a la línea es mucho mayor que el efecto de la pendiente, lo cual sugiere que `china_dependence` por sí sola explica una fracción pequeña de la variabilidad del comportamiento de voto y que cualquier modelo predictivo serio necesitaría incorporar otras dimensiones (ideología, alineación, región, etc.).
+
+# Conclusiones preliminares
+
+El análisis exploratorio aporta varios elementos de juicio sobre la pregunta de investigación, sin pretender resolverla.
+
+**Hallazgos principales**
+
+-   La distribución de `china_dependence` es fuertemente asimétrica. La mediana global es de aproximadamente `r round(median(dataset$china_dependence, na.rm = TRUE), 3)`, con la mayoría de los países-año con dependencia menor al 10% del PBI. El outlier extremo es **Marshall Islands** (39.4 en 2016), explicable por su rol de jurisdicción de banderas de conveniencia, no por una dependencia comercial real.
+
+-   La comparación por grupos (corte por la mediana) muestra que los países con **alta dependencia** comercial con China tienen una mediana de `pct_yes` de 0.800, frente a 0.714 en el grupo de **baja dependencia**. La diferencia de aproximadamente 9 puntos porcentuales es consistente con la dirección sugerida por la pregunta de investigación: a mayor dependencia, mayor propensión a votar a favor de las resoluciones de DDHH (en línea con las posiciones tradicionalmente defendidas por China).
+
+-   El diagrama de dispersión filtrando el outlier confirma esta dirección con una **pendiente positiva** de la línea de regresión lineal. Sin embargo, la dispersión vertical es muy alta: para un mismo valor de `china_dependence`, `pct_yes` puede ir de 0 a 1, lo que indica que la dependencia comercial sola explica una fracción pequeña de la variabilidad del comportamiento de voto.
+
+-   La evolución temporal muestra que `china_dependence` creció de manera prácticamente monótona entre 1995 y 2016 (consistente con la integración de China al sistema de comercio global), mientras que `pct_yes` osciló en un rango más estrecho sin tendencia clara. Cualquier análisis posterior debe controlar por año o por tendencia para evitar correlaciones espurias.
+
+-   El top 10 de países que más veces votaron "no" en resoluciones de DDHH está dominado por **Estados Unidos**, seguido de Israel, Marshall Islands, Palau, Canadá y otros países desarrollados. Es interesante notar que **Marshall Islands aparece simultáneamente como el outlier de dependencia y entre los países que más rechazan resoluciones de DDHH**, lo cual ilustra que la "dependencia" medida no captura alineación política con China en este caso particular (su patrón de voto está alineado con Estados Unidos vía el Compact of Free Association).
+
+**Hallazgo metodológico**
+
+Detectamos que las variables `exports_to_china` e `imports_from_china` del dataset producido por la Etapa 3 **tienen valores idénticos para todas las observaciones**: las dos columnas suman los mismos flujos del Atlas of Economic Complexity sin distinguir el sentido (exportación vs. importación). El indicador derivado `china_dependence` resulta entonces equivalente a `2 * exports_to_china / gdp` en lugar de `(exports + imports) / gdp`. Esto **no afecta el ordenamiento** de los países según su dependencia (la variable sigue siendo monótona respecto al volumen real de comercio bilateral), por lo que las conclusiones cualitativas del EDA se mantienen, pero la escala absoluta de la variable está afectada y `exports_to_china` e `imports_from_china` por separado no son interpretables. Este punto debe corregirse en una iteración posterior de la Etapa 3.
+
+**Limitaciones**
+
+El EDA describe asociaciones, no relaciones causales. La dependencia comercial con China está correlacionada con otras dimensiones que también influyen en el comportamiento de voto (nivel de desarrollo económico, alineación geopolítica, región geográfica, sistema político), por lo que la diferencia observada entre grupos puede reflejar parcialmente esas otras dimensiones. La pregunta del TP requiere modelos con controles que excedan el alcance de un análisis exploratorio.
+
+**Próximos pasos**
+
+La Etapa 5 incorpora el componente de NLP sobre los textos del *UN General Debate Corpus*, lo que permitirá complementar las variables de votación con un análisis del discurso sobre DDHH. Las conclusiones del presente EDA sugieren que la combinación de ambas dimensiones (voto + discurso) puede aportar más información que cualquiera de las dos por separado.
