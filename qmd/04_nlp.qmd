@@ -80,3 +80,36 @@ nrow(tokens)
 head(tokens)
 ```
 
+#Eliminamos stopwords usando anti_join
+```{r}
+data("stop_words")  # carga las stopwords incluidas en tidytext
+
+tokens_limpios <- tokens %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!str_detect(word, "^[0-9]+$"))  # elimina números
+
+# Verificar cuántas palabras quedan
+nrow(tokens_limpios)
+```
+#Luego de eliminar stopwords y quedarnos con las palabras significativas que queremos analizar, pasamos a la lematización usando udpipe.
+```{r}
+#Descargamos el modelo de inglés
+ud_model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(ud_model$file_model)
+#Lematizamos
+anotaciones <- udpipe_annotate(ud_model, 
+                                x = tokens_limpios$word,
+                                doc_id = seq_along(tokens_limpios$word)) %>%
+  as.data.frame() %>%
+  select(doc_id, lemma) %>%
+  mutate(doc_id = as.integer(doc_id))
+
+tokens_lematizados <- tokens_limpios %>%
+  mutate(doc_id = row_number()) %>%
+  left_join(anotaciones, by = "doc_id") %>%
+  select(-word)  # nos quedamos con el lema en lugar de la palabra original
+
+# Verificar
+head(tokens_lematizados)
+```
+
