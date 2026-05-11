@@ -58,6 +58,5 @@ data/raw/
 .DS_Store
 Thumbs.db
 # Quarto: outputs y cache (Etapa 4 en adelante)
-qmd/*.html
 qmd/*_files/
 .quarto/
