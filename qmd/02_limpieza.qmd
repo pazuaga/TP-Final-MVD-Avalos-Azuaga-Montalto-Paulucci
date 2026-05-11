@@ -1,6 +1,12 @@
 ---
 title: "Limpieza y construcción del dataset"
-format: html
+date: 2026-05-08
+lang: es
+format:
+  html:
+    toc: true
+    toc-location: left
+    embed-resources: true
 editor: visual
 ---
 
@@ -10,8 +16,6 @@ editor: visual
 library(tidyverse)   # manipulación de datos 
 library(here)        # rutas relativas
 library(countrycode) # estandarización de códigos de país
-library(naniar)      # manejo de valores faltantes 
-library(skimr)       # inspección rápida de datos
 ```
 
 ```{r}
@@ -82,27 +86,21 @@ Filtramos únicamente los flujos comerciales hacia y desde China, y agregamos po
 
 ```{r}
 #| label: limpiar-atlas
-# Separamos los flujos según el sentido correcto:
-# Cuando location_code != CHN: export_value = exportaciones del país a China
-# Cuando location_code == CHN: export_value = exportaciones de China al país
-# (osea, importaciones del país desde China)
-
-exports <- atlas_raw |>
+# Nos quedamos con las filas donde el país NO es China y el socio SÍ es China.
+# En esas filas, export_value son las exportaciones del país a China e
+# import_value son las importaciones del país desde China. Como las dos
+# columnas vienen del mismo set de filas, no se duplican entre sí.
+atlas_china <- atlas_raw |>
   filter(location_code != "CHN", partner_code == "CHN") |>
-  mutate(iso3c = location_code, year = as.integer(year)) |>
+  mutate(
+    iso3c = location_code,
+    year  = as.integer(year)) |>
   filter(year >= 1995, year <= 2016) |>
   group_by(iso3c, year) |>
-  summarise(exports_to_china = sum(export_value, na.rm = TRUE), .groups = "drop")
-
-imports <- atlas_raw |>
-  filter(location_code == "CHN", partner_code != "CHN") |>
-  mutate(iso3c = partner_code, year = as.integer(year)) |>
-  filter(year >= 1995, year <= 2016) |>
-  group_by(iso3c, year) |>
-  summarise(imports_from_china = sum(export_value, na.rm = TRUE), .groups = "drop")
-
-atlas_china <- exports |>
-  full_join(imports, by = c("iso3c", "year"))
+  summarise(
+    exports_to_china   = sum(export_value, na.rm = TRUE),
+    imports_from_china = sum(import_value, na.rm = TRUE),
+    .groups = "drop")
 
 glimpse(atlas_china)
 ```
