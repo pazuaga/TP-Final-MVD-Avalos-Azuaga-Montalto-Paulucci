@@ -156,4 +156,9 @@ log_odds %>%
   theme_minimal()
 ```
 
+#Guardamos el gráfico
+```{r}
+ggsave(here("output", "figures", "nlp_log_odds.png"), 
++        width = 10, height = 6, dpi = 300)
+```
 
