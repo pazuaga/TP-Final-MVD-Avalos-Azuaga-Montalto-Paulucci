@@ -52,7 +52,8 @@ rsconnect/
 .Renviron
 
 # Datos crudos -- pueden ser pesados; cada uno los baja localmente
-data/raw/
+data/raw/*
+!data/raw/.gitkeep
 
 # Archivos del sistema operativo
 .DS_Store
