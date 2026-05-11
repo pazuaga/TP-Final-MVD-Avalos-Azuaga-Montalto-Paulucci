@@ -1,10 +1,22 @@
 ---
-title: "Etapa 5 - Análisis NLP de resoluciones de DDHH"
-format: html
+---
+title: "Análisis NLP de resoluciones de DDHH"
+subtitle: "TP Final, Manejo y Visualización de Datos"
+author: "Avalos, Azuaga, Montalto, Paulucci"
+date: today
+lang: es
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    number-sections: true
+    embed-resources: true
+execute:
+  message: false
+  warning: false
 editor: visual
 ---
-
-
 
 ```{r}
 library(tidyverse)
@@ -15,7 +27,12 @@ library(tidylo)
 library(countrycode)
 ```
 
-#Importamos y leemos los datos para hacer el procesamiento
+Este notebook implementa la propuesta de análisis presentada al final del EDA. La idea es complementar el análisis cuantitativo de votos con un análisis del *contenido* de las resoluciones. La pregunta concreta: ¿hay diferencias sistemáticas en el vocabulario de las resoluciones que el bloque de países con alta dependencia comercial con China **apoya**, versus las que **rechaza o se abstiene**? Usamos TF-IDF y log odds ratio para identificar los términos más distintivos de cada grupo.
+
+## Importacion de datos
+
+Cargamos cuatro insumos: el `dataset_final.rds` que produjo el 02 (para identificar los países de alta dependencia), y los tres archivos crudos de `unvotes` (textos de resoluciones, clasificación temática y votos individuales).
+
 ```{r}
 dataset_final <- readRDS(here("data/processed/dataset_final.rds"))
 un_rollcalls  <- readRDS(here("data/raw/un_rollcalls_raw.rds"))
@@ -23,35 +40,42 @@ un_issues     <- readRDS(here("data/raw/un_issues_raw.rds"))
 un_votes     <- readRDS(here("data/raw/unvotes_raw.rds"))
 ```
 
-#Definimos qué países son "de alta dependencia" y luego filtramos las resoluciones para quedarnos solamente con las de DDHH.
+## Definimos del bloque "de alta dependencia" y filtrado para resoluciones de DDHH 
+
+Definimos como "alta dependencia" a los países que en algún año estuvieron por encima del **percentil 75** de `china_dependence`. La elección del umbral es deliberada: con la mediana el bloque incluiría medio mundo y los contrastes se diluirían; con el percentil 90 quedarían poquísimos países y los resultados serían inestables. Después extraemos la lista de `rcid` de las resoluciones clasificadas como *Human rights*.
+
 ```{r}
 # 1. Definir umbral de alta dependencia (percentil 75, por ejemplo)
 umbral <- quantile(dataset_final$china_dependence, 0.75, na.rm = TRUE)
 
 # 2. Etiquetar países como alta o baja dependencia
-paises_alta <- dataset_final %>%
-  filter(china_dependence >= umbral) %>%
-  distinct(iso3c) %>%
+paises_alta <- dataset_final |>
+  filter(china_dependence >= umbral) |>
+  distinct(iso3c) |>
   pull(iso3c)
 # 3. Quedarse solo con los rcid de resoluciones de DDHH
-rcid_ddhh <- un_issues %>%
-  filter(issue == "Human rights") %>%
+rcid_ddhh <- un_issues |>
+  filter(issue == "Human rights") |>
   pull(rcid)
 
 length(rcid_ddhh)  # cuántas resoluciones de DDHH hay
 
 ```
-#Ahora clasificamos cada resolución considerado cómo voto cada bloque, es decir, si: Si, No o Abstención. Luego, calcula qué proporción del bloque votó No o Abstención. Si es 50% o más, la resolución va al grupo "rechaza_abstiene", si no, a "apoya".
+
+## Clasificación de resoluciones
+
+Para cada resolución de DDHH, calculamos qué proporción del bloque votó "no" o "abstain". Si al menos la mitad del bloque rechaza o se abstiene, la resolución se clasifica como **rechaza_abstiene**; si menos de la mitad, como **apoya**. El resultado preliminar es elocuente: de 1015 resoluciones, 897 son apoyadas y solo 118 son rechazadas o abstenidas, lo cual ya sugiere que el bloque se alinea positivamente con la mayoría de las resoluciones de DDHH.
+
 ```{r}
 # Cómo votó el bloque de alta dependencia en cada resolución
-votos_bloque <- un_votes %>%
-  mutate(iso3c = countrycode(country_code, origin = "iso2c", destination = "iso3c")) %>%
+votos_bloque <- un_votes |>
+  mutate(iso3c = countrycode(country_code, origin = "iso2c", destination = "iso3c")) |>
   filter(iso3c %in% paises_alta,
-         rcid %in% rcid_ddhh) %>%
-  group_by(rcid) %>%
+         rcid %in% rcid_ddhh) |>
+  group_by(rcid) |>
   summarise(
     prop_no_abs = mean(vote %in% c("no", "abstain"), na.rm = TRUE)
-  ) %>%
+  ) |>
   mutate(
     grupo = if_else(prop_no_abs >= 0.5, "rechaza_abstiene", "apoya")
   )
@@ -59,20 +83,29 @@ votos_bloque <- un_votes %>%
 # Verificar cuántas resoluciones quedaron en cada grupo
 count(votos_bloque, grupo)
 ```
-#Unimos los textos de las resoluciones con la clasificación.
+
+## Unimos los textos de las resoluciones con la clasificación
+
+Unimos los textos de las resoluciones (campo `descr`) con la clasificación que acabamos de construir, restringido al período **1995-2016** para mantener coherencia con el resto del análisis. De las 1015 resoluciones de DDHH totales, 469 caen dentro del período.
+
 ```{r}
-textos_clasificados <- un_rollcalls %>%
-  filter(rcid %in% rcid_ddhh) %>%
-  select(rcid, descr) %>%
+textos_clasificados <- un_rollcalls |>
+  filter(rcid %in% rcid_ddhh,
+         year(date) >= 1995, year(date) <= 2016) |>
+  select(rcid, descr) |>
   inner_join(votos_bloque, by = "rcid")
 
 # Verificar
 glimpse(textos_clasificados)
 nrow(textos_clasificados)
 ```
-#Ahora que tenemos la información agrupada, pasamos a la tokenización
+
+## Tokenización
+
+`unnest_tokens()` rompe cada texto en palabras individuales y devuelve una fila por palabra. Cada palabra hereda el grupo (apoya / rechaza_abstiene) de la resolución de la que viene. Quedan 11.027 tokens
+
 ```{r}
-tokens <- textos_clasificados %>%
+tokens <- textos_clasificados |>
   unnest_tokens(word, descr)
 
 # Verificar
@@ -80,18 +113,25 @@ nrow(tokens)
 head(tokens)
 ```
 
-#Eliminamos stopwords usando anti_join
+## Eliminación de stopwords 
+
+Eliminamos las palabras vacías de significado (*the*, *of*, *and*, etc.) usando el diccionario `stop_words` de tidytext con un `anti_join`. También filtramos los tokens que son solo números (años, identificadores) que no aportan al análisis temático. Quedan 5.707 tokens.
+
 ```{r}
 data("stop_words")  # carga las stopwords incluidas en tidytext
 
-tokens_limpios <- tokens %>%
-  anti_join(stop_words, by = "word") %>%
+tokens_limpios <- tokens |>
+  anti_join(stop_words, by = "word") |>
   filter(!str_detect(word, "^[0-9]+$"))  # elimina números
 
 # Verificar cuántas palabras quedan
 nrow(tokens_limpios)
 ```
-#Luego de eliminar stopwords y quedarnos con las palabras significativas que queremos analizar, pasamos a la lematización usando udpipe.
+
+## Lematización
+
+La lematización colapsa formas variantes de la misma palabra (*occupied / occupies / occupying* → *occupy*). Usamos el modelo de inglés de `udpipe`. El filtro final saca lemas muy cortos y un par de artefactos típicos de la lematización (`re`, `resol`).
+
 ```{r}
 #Descargamos el modelo de inglés
 ud_model <- udpipe_download_model(language = "english")
@@ -99,51 +139,63 @@ ud_model <- udpipe_load_model(ud_model$file_model)
 #Lematizamos
 anotaciones <- udpipe_annotate(ud_model, 
                                 x = tokens_limpios$word,
-                                doc_id = seq_along(tokens_limpios$word)) %>%
-  as.data.frame() %>%
-  select(doc_id, lemma) %>%
+                                doc_id = seq_along(tokens_limpios$word)) |>
+  as.data.frame() |>
+  select(doc_id, lemma) |>
   mutate(doc_id = as.integer(doc_id))
 
-tokens_lematizados <- tokens_limpios %>%
-  mutate(doc_id = row_number()) %>%
-  left_join(anotaciones, by = "doc_id") %>%
-  select(-word) %>%
+tokens_lematizados <- tokens_limpios |>
+  mutate(doc_id = row_number()) |>
+  left_join(anotaciones, by = "doc_id") |>
+  select(-word) |>
   filter(nchar(trimws(lemma)) > 2,
-         !lemma %in% c("re", "de", "en", "al", "resol"))
+       !lemma %in% c("re", "resol"))
 ```
-#Calculamos el TF-IDF usando count y luego los agrupamos usando group_by para ver los terminos más distintivos de cada grupo.
+
+## TF-IDF
+
+TF-IDF pondera cada lema por su frecuencia dentro del grupo (TF) y la rareza entre grupos (IDF). Los términos con TF-IDF más alto son los que aparecen mucho en un grupo y poco en el otro. En **apoya** dominan *palestinian*, *occupy*, *territory*, *israeli*, *jerusalem*, claramente asociados a las resoluciones sobre Israel-Palestina. En **rechaza_abstiene** aparecen *iran*, *islamic*, *cuba*, *turkmenistan*, países que las resoluciones suelen señalar como objeto de crítica.
+
 ```{r}
 #Calculamos el TF-IDF
-tfidf <- tokens_lematizados %>%
-  count(grupo, lemma) %>%
-  bind_tf_idf(lemma, grupo, n) %>%
+tfidf <- tokens_lematizados |>
+  count(grupo, lemma) |>
+  bind_tf_idf(lemma, grupo, n) |>
   arrange(desc(tf_idf))
 # Vemos los términos más distintivos de cada grupo
-tfidf %>% 
-  group_by(grupo) %>% 
-  slice_max(tf_idf, n = 10) %>% 
+tfidf |> 
+  group_by(grupo) |> 
+  slice_max(tf_idf, n = 10) |> 
   print(n = 20)
 
 ```
-#Calculamos el Log Odds ratio
+
+## Calculamos el Log Odds ratio
+
+El log odds ratio ponderado (`bind_log_odds` de `tidylo`) es una métrica alternativa a TF-IDF que penaliza palabras raras con poca evidencia estadística. Da resultados parecidos pero más estables: confirma que **apoya** se asocia al léxico palestino-israelí, mientras que **rechaza_abstiene** se asocia a *iran* / *islamic* además de palabras genéricas (*right*, *human*, *situation*, *resolution*) que aparecen muy frecuentemente en este grupo.
+
 ```{r}
-log_odds <- tokens_lematizados %>%
-  count(grupo, lemma) %>%
+log_odds <- tokens_lematizados |>
+  count(grupo, lemma) |>
   bind_log_odds(grupo, lemma, n)
 
 # Ver los más distintivos de cada grupo
-log_odds %>% 
-  group_by(grupo) %>% 
-  slice_max(log_odds_weighted, n = 10) %>% 
+log_odds |> 
+  group_by(grupo) |> 
+  slice_max(log_odds_weighted, n = 10) |> 
   print(n = 20)
 ```
-#Visualizamos los datos obtenidos
+
+## Visualizamos los datos obtenidos
+
+El gráfico de abajo muestra los 15 lemas más distintivos de cada grupo según el log odds ratio ponderado, en paneles facetados.
+
 ```{r}
-log_odds %>%
-  group_by(grupo) %>%
-  slice_max(log_odds_weighted, n = 15) %>%
-  ungroup() %>%
-  mutate(lemma = reorder(lemma, log_odds_weighted)) %>%
+log_odds |>
+  group_by(grupo) |>
+  slice_max(log_odds_weighted, n = 15) |>
+  ungroup() |>
+  mutate(lemma = reorder(lemma, log_odds_weighted)) |>
   ggplot(aes(x = log_odds_weighted, y = lemma, fill = grupo)) +
   geom_col(show.legend = FALSE) +
   facet_wrap(~grupo, scales = "free_y") +
@@ -156,9 +208,22 @@ log_odds %>%
   theme_minimal()
 ```
 
-#Guardamos el gráfico
+**Resultados principales.** El bloque de países con alta dependencia comercial con China apoya sistemáticamente las resoluciones sobre Palestina/Israel (*palestinian*, *occupy*, *territory*, *israeli*, *jerusalem*, *racial*, *discrimination*, *racism*). En cambio, rechaza o se abstiene en resoluciones que apuntan a países donde China tiene intereses estratégicos o ideológicos: Irán (*iran*, *islamic*), Cuba y Sudán. La diferencia es coherente con la hipótesis del trabajo: el voto del bloque no es aleatorio sino que sigue un patrón temático identificable. Esto refuerza el hallazgo del EDA (mayor `pct_yes` entre países de alta dependencia) agregando una dimensión cualitativa: qué tipo de resoluciones se apoyan y cuáles se rechazan.
+
+## Guardamos el gráfico
+
+Exportamos el gráfico final a `output/figures/` para poder incluirlo en el informe del TP sin tener que re-renderizar el notebook entero.
+
 ```{r}
-ggsave(here("output", "figures", "nlp_log_odds.png"), 
-+        width = 10, height = 6, dpi = 300)
+# Creamos la carpeta de figuras si no existe (similar a lo que hicimos
+# en 02_limpieza con data/processed).
+dir.create(here("output", "figures"), recursive = TRUE, showWarnings = FALSE)
+
+# Guardamos el último gráfico generado (ggsave toma last_plot() por defecto).
+ggsave(here("output", "figures", "nlp_log_odds.png"),
+       width = 10, height = 6, dpi = 300)
 ```
 
+## Conclusiones
+
+El análisis NLP confirma cualitativamente la dirección que sugería el EDA. Los países con alta dependencia comercial con China muestran un patrón de voto en DDHH **selectivo, no uniforme**: apoyan masivamente la agenda crítica hacia Israel (donde China sostiene una postura pública alineada con esta posición) y rechazan o se abstienen en resoluciones que apuntan a Irán, Cuba y Sudán, países con los que China tiene relaciones estratégicas o ideológicas. Esto sugiere que el factor "dependencia comercial" tiene mayor poder explicativo cuando se cruza con la **afinidad estratégica** entre China y el país objeto de la resolución, una dimensión que el análisis cuantitativo del 03 no captura. Una posible profundización para la segunda entrega sería incorporar variables de alineación política o ideológica para separar el efecto comercial puro del efecto de alineación con la política exterior china.
