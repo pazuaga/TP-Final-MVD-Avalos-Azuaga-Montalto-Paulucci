@@ -3098,8 +3098,7 @@ vertical-align: -.125em;
   <li><a href="#tf-idf" id="toc-tf-idf" class="nav-link" data-scroll-target="#tf-idf"><span class="header-section-number">8</span> TF-IDF</a></li>
   <li><a href="#calculamos-el-log-odds-ratio" id="toc-calculamos-el-log-odds-ratio" class="nav-link" data-scroll-target="#calculamos-el-log-odds-ratio"><span class="header-section-number">9</span> Calculamos el Log Odds ratio</a></li>
   <li><a href="#visualizamos-los-datos-obtenidos" id="toc-visualizamos-los-datos-obtenidos" class="nav-link" data-scroll-target="#visualizamos-los-datos-obtenidos"><span class="header-section-number">10</span> Visualizamos los datos obtenidos</a></li>
-  <li><a href="#guardamos-el-gráfico" id="toc-guardamos-el-gráfico" class="nav-link" data-scroll-target="#guardamos-el-gráfico"><span class="header-section-number">11</span> Guardamos el gráfico</a></li>
-  <li><a href="#conclusiones" id="toc-conclusiones" class="nav-link" data-scroll-target="#conclusiones"><span class="header-section-number">12</span> Conclusiones</a></li>
+  <li><a href="#conclusiones" id="toc-conclusiones" class="nav-link" data-scroll-target="#conclusiones"><span class="header-section-number">11</span> Conclusiones</a></li>
   </ul>
 </nav>
 </div>
@@ -3453,24 +3452,8 @@ $ grupo       &lt;chr&gt; &quot;apoya&quot;, &quot;apoya&quot;, &quot;apoya&quot
 </div>
 <p><strong>Resultados principales.</strong> El bloque de países con alta dependencia comercial con China apoya sistemáticamente las resoluciones sobre Palestina/Israel (<em>palestinian</em>, <em>occupy</em>, <em>territory</em>, <em>israeli</em>, <em>jerusalem</em>, <em>racial</em>, <em>discrimination</em>, <em>racism</em>). En cambio, rechaza o se abstiene en resoluciones que apuntan a países donde China tiene intereses estratégicos o ideológicos: Irán (<em>iran</em>, <em>islamic</em>), Cuba y Sudán. La diferencia es coherente con la hipótesis del trabajo: el voto del bloque no es aleatorio sino que sigue un patrón temático identificable. Esto refuerza el hallazgo del EDA (mayor <code>pct_yes</code> entre países de alta dependencia) agregando una dimensión cualitativa: qué tipo de resoluciones se apoyan y cuáles se rechazan.</p>
 </section>
-<section id="guardamos-el-gráfico" class="level2" data-number="11">
-<h2 data-number="11" class="anchored" data-anchor-id="guardamos-el-gráfico"><span class="header-section-number">11</span> Guardamos el gráfico</h2>
-<p>Exportamos el gráfico final a <code>output/figures/</code> para poder incluirlo en el informe del TP sin tener que re-renderizar el notebook entero.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Código</summary>
-<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Creamos la carpeta de figuras si no existe (similar a lo que hicimos</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="co"># en 02_limpieza con data/processed).</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dir.create</span>(<span class="fu">here</span>(<span class="st">&quot;output&quot;</span>, <span class="st">&quot;figures&quot;</span>), <span class="at">recursive =</span> <span class="cn">TRUE</span>, <span class="at">showWarnings =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Guardamos el último gráfico generado (ggsave toma last_plot() por defecto).</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="fu">ggsave</span>(<span class="fu">here</span>(<span class="st">&quot;output&quot;</span>, <span class="st">&quot;figures&quot;</span>, <span class="st">&quot;nlp_log_odds.png&quot;</span>),</span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>       <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">6</span>, <span class="at">dpi =</span> <span class="dv">300</span>)</span></code><button title="Copiar al portapapeles" class="code-copy-button"><i class="bi"></i></button></pre></div>
-</details>
-</div>
-</section>
-<section id="conclusiones" class="level2" data-number="12">
-<h2 data-number="12" class="anchored" data-anchor-id="conclusiones"><span class="header-section-number">12</span> Conclusiones</h2>
+<section id="conclusiones" class="level2" data-number="11">
+<h2 data-number="11" class="anchored" data-anchor-id="conclusiones"><span class="header-section-number">11</span> Conclusiones</h2>
 <p>El análisis NLP confirma cualitativamente la dirección que sugería el EDA. Los países con alta dependencia comercial con China muestran un patrón de voto en DDHH <strong>selectivo, no uniforme</strong>: apoyan masivamente la agenda crítica hacia Israel (donde China sostiene una postura pública alineada con esta posición) y rechazan o se abstienen en resoluciones que apuntan a Irán, Cuba y Sudán, países con los que China tiene relaciones estratégicas o ideológicas. Esto sugiere que el factor “dependencia comercial” tiene mayor poder explicativo cuando se cruza con la <strong>afinidad estratégica</strong> entre China y el país objeto de la resolución, una dimensión que el análisis cuantitativo del 03 no captura. Una posible profundización para la segunda entrega sería incorporar variables de alineación política o ideológica para separar el efecto comercial puro del efecto de alineación con la política exterior china.</p>
 </section>
 

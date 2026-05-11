@@ -40,7 +40,7 @@ un_issues     <- readRDS(here("data/raw/un_issues_raw.rds"))
 un_votes     <- readRDS(here("data/raw/unvotes_raw.rds"))
 ```
 
-## Definimos del bloque "de alta dependencia" y filtrado para resoluciones de DDHH 
+## Definimos del bloque "de alta dependencia" y filtrado para resoluciones de DDHH
 
 Definimos como "alta dependencia" a los países que en algún año estuvieron por encima del **percentil 75** de `china_dependence`. La elección del umbral es deliberada: con la mediana el bloque incluiría medio mundo y los contrastes se diluirían; con el percentil 90 quedarían poquísimos países y los resultados serían inestables. Después extraemos la lista de `rcid` de las resoluciones clasificadas como *Human rights*.
 
@@ -113,7 +113,7 @@ nrow(tokens)
 head(tokens)
 ```
 
-## Eliminación de stopwords 
+## Eliminación de stopwords
 
 Eliminamos las palabras vacías de significado (*the*, *of*, *and*, etc.) usando el diccionario `stop_words` de tidytext con un `anti_join`. También filtramos los tokens que son solo números (años, identificadores) que no aportan al análisis temático. Quedan 5.707 tokens.
 
@@ -209,20 +209,6 @@ log_odds |>
 ```
 
 **Resultados principales.** El bloque de países con alta dependencia comercial con China apoya sistemáticamente las resoluciones sobre Palestina/Israel (*palestinian*, *occupy*, *territory*, *israeli*, *jerusalem*, *racial*, *discrimination*, *racism*). En cambio, rechaza o se abstiene en resoluciones que apuntan a países donde China tiene intereses estratégicos o ideológicos: Irán (*iran*, *islamic*), Cuba y Sudán. La diferencia es coherente con la hipótesis del trabajo: el voto del bloque no es aleatorio sino que sigue un patrón temático identificable. Esto refuerza el hallazgo del EDA (mayor `pct_yes` entre países de alta dependencia) agregando una dimensión cualitativa: qué tipo de resoluciones se apoyan y cuáles se rechazan.
-
-## Guardamos el gráfico
-
-Exportamos el gráfico final a `output/figures/` para poder incluirlo en el informe del TP sin tener que re-renderizar el notebook entero.
-
-```{r}
-# Creamos la carpeta de figuras si no existe (similar a lo que hicimos
-# en 02_limpieza con data/processed).
-dir.create(here("output", "figures"), recursive = TRUE, showWarnings = FALSE)
-
-# Guardamos el último gráfico generado (ggsave toma last_plot() por defecto).
-ggsave(here("output", "figures", "nlp_log_odds.png"),
-       width = 10, height = 6, dpi = 300)
-```
 
 ## Conclusiones
 
