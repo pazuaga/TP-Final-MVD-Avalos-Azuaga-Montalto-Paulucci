@@ -41,12 +41,10 @@ glimpse(dataset_final)
 
 ```{r}
 dataset_final %>%
-  summarise(
-    total = n(),
+  summarise(total = n(),
     sin_gdp_per_capita = sum(is.na(gdp_per_capita)),
     sin_region = sum(is.na(region)),
-    sin_pct_yes = sum(is.na(pct_yes))
-  )
+    sin_pct_yes = sum(is.na(pct_yes)))
 
 ```
 
@@ -94,4 +92,63 @@ tidy(modelo_1) |> filter(term == "china_dependence") |>
   bind_rows(tidy(modelo_2) |> filter(term == "china_dependence") |>
       mutate(modelo = "Con controles"))|>
   select(modelo, estimate, std.error, p.value)
+```
+
+## Paso B — Tabla a nivel resolución con país-objeto
+
+Construimos una tabla donde cada fila es una resolución de DDHH con su país-objeto identificado a partir de palabras clave en el texto descriptivo. Esto nos permite analizar si el efecto de la exposición comercial con China sobre el voto varía según el país al que apunta la resolución.
+
+```{r}
+#| label: cargar-textos
+
+# Cargamos los archivos guardados por el notebook de NLP
+textos_clasificados <- readRDS(here("data/processed/textos_clasificados.rds"))
+paises_alta <- readRDS(here("data/processed/paises_alta.rds"))
+
+glimpse(textos_clasificados)
+```
+
+Asignamos un país-objeto a cada resolución buscando palabras clave en el texto descriptivo (descr). Las categorías son: Israel-Palestina, Irán, Cuba, Sudán, Bielorrusia y Otros (resoluciones que no mencionan explícitamente ninguno de estos países).
+
+```{r}
+#| label: etiquetar-pais-objeto
+
+tabla_resoluciones <- textos_clasificados |>
+  mutate(
+    pais_objeto = case_when(
+      str_detect(str_to_lower(descr), "palestin|israel|gaza|west bank|jerusalem") ~ "Israel-Palestina",
+      str_detect(str_to_lower(descr), "iran|islamic republic") ~ "Iran",
+      str_detect(str_to_lower(descr), "cuba") ~ "Cuba",
+      str_detect(str_to_lower(descr), "sudan|darfur") ~ "Sudan",
+      str_detect(str_to_lower(descr), "belarus|bielorrusia") ~ "Bielorrusia",
+      str_detect(str_to_lower(descr), "congo|democratic republic") ~ "Congo",
+      str_detect(str_to_lower(descr), "iraq") ~ "Iraq",
+      str_detect(str_to_lower(descr), "kosovo") ~ "Kosovo",
+      str_detect(str_to_lower(descr), "bosnia|herzegovina|yugoslavia") ~ "Ex-Yugoslavia",
+      str_detect(str_to_lower(descr), "nigeria") ~ "Nigeria",
+      str_detect(str_to_lower(descr), "turkmenistan")  ~ "Turkmenistan",
+      str_detect(str_to_lower(descr), "uzbekistan") ~ "Uzbekistan",
+      str_detect(str_to_lower(descr), "korea|democratic people") ~ "Corea del Norte",
+      str_detect(str_to_lower(descr), "syrian golan|syria") ~ "Siria",
+      str_detect(str_to_lower(descr), "myanmar|burma") ~ "Myanmar",
+      str_detect(str_to_lower(descr), "racial|racism|xenophob|discriminat") ~ "Discriminacion racial",
+      str_detect(str_to_lower(descr), "self.determin|peoples|indigenous") ~ "Autodeterminacion",
+      str_detect(str_to_lower(descr), "right to food|rights of the child|physical|mental health") ~ "Derechos sociales",
+      str_detect(str_to_lower(descr), "sovereignty|non.interference|diversity of democratic") ~ "Soberania",
+      str_detect(str_to_lower(descr), "development|cooperation|globalization|terrorism|mercenari|travel|coercive|reunification|peace|geographical|death penalty|defamation|dialogue|moratorium") ~ "Temas generales",
+      TRUE ~ "Otros"))
+
+count(tabla_resoluciones, pais_objeto, sort = TRUE) |> print(n = 25)
+```
+
+Con esto, cada resolución tiene su país-objeto identificado y la posición del bloque de alta exposición. Esta tabla es el insumo principal de la Fase 2.
+
+```{r}
+#| label: guardar-tabla-resoluciones
+
+# Guardamos la tabla para usarla en la Fase 2
+saveRDS(tabla_resoluciones, here("data/processed/tabla_resoluciones.rds"))
+
+cat("Tabla guardada con", nrow(tabla_resoluciones), "resoluciones y", 
+    n_distinct(tabla_resoluciones$pais_objeto), "categorías de país-objeto.")
 ```
