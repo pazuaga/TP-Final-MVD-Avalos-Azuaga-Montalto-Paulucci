@@ -4,6 +4,8 @@ format: html
 editor: visual
 ---
 
+# **Fase 0:** 
+
 ## **Paso 0.1** — Carga de librerías
 
 ```{r}
@@ -33,10 +35,11 @@ dataset_final <- dataset_final %>%
 glimpse(dataset_final)
 ```
 
-## **Paso 0.3** — Verificar los datos faltantes. 
+## **Paso 0.3** — Verificar los datos faltantes.
 
 #verificar cuántas observaciones quedan utilizables para la regresión, antes de invertir tiempo en estimarla. IMportante para que la regresión tenga variable dependiente
-``` {r}
+
+```{r}
 dataset_final %>%
   summarise(
     total = n(),
@@ -45,4 +48,50 @@ dataset_final %>%
     sin_pct_yes = sum(is.na(pct_yes))
   )
 
+```
+
+# **Fase 1:**
+
+## Paso A — Regresión con controles
+
+Estimamos dos modelos de regresión lineal sobre el panel país-año. El primero incluye únicamente la exposición comercial con China como variable explicativa. El segundo incorpora controles por nivel de desarrollo (PBI per cápita), región geográfica y año, para descartar correlaciones espurias y enfrentar la objeción de que el efecto observado refleja desarrollo económico más que exposición a China.
+
+```{r}
+#| label: regresion-modelo1
+
+# Modelo 1: solo exposición comercial con China
+# lm() estima una regresión lineal por mínimos cuadrados ordinarios
+# pct_yes es el porcentaje de votos a favor en resoluciones de DDHH
+modelo_1 <- lm(pct_yes ~ china_dependence,
+  data = dataset_final |> filter(!is.na(pct_yes), !is.na(china_dependence)))
+
+summary(modelo_1)
+```
+
+El segundo modelo agrega tres controles: PBI per cápita (para captar nivel de desarrollo), región (para captar alineación geopolítica Norte-Sur) y año (para absorber tendencias temporales globales y descartar correlaciones espurias entre dos series que crecen en paralelo).
+
+```{r}
+#| label: regresion-modelo2
+
+# Modelo 2: exposición + controles
+modelo_2 <- lm(pct_yes ~ china_dependence + log(gdp_per_capita) + region + factor(year),
+               data = dataset_final |> filter(!is.na(pct_yes), !is.na(china_dependence), !is.na(gdp_per_capita), !is.na(region)))
+
+summary(modelo_2)
+```
+
+Comparamos los coeficientes de *china_dependence* en ambos modelos. Si el coeficiente se mantiene positivo y significativo en el Modelo 2, la asociación no se explica por desarrollo ni por tendencias temporales.
+
+```{r}
+#| label: comparacion-modelos
+
+# Comparamos los coeficientes de china_dependence en ambos modelos
+# broom::tidy() convierte el output de lm() en un tibble ordenado
+library(broom)
+
+tidy(modelo_1) |> filter(term == "china_dependence") |> 
+  mutate(modelo = "Sin controles") |>
+  bind_rows(tidy(modelo_2) |> filter(term == "china_dependence") |>
+      mutate(modelo = "Con controles"))|>
+  select(modelo, estimate, std.error, p.value)
 ```
