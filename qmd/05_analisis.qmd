@@ -1,0 +1,48 @@
+---
+title: "Análisis con controles y heterogeneidad temática"
+format: html
+editor: visual
+---
+
+## **Paso 0.1** — Carga de librerías
+
+```{r}
+library(tidyverse)
+library(here)
+library(countrycode)
+```
+
+## **Paso 0.2** — cargar el dataset, agregar la región y excluir el caso atípico.
+
+```{r}
+# Cargar el dataset ya construido (Etapa 3)
+dataset_final <- readRDS(here("data/processed/dataset_final.rds"))
+
+# Agregar la columna de región a partir de iso3c (clasificación del Banco Mundial)
+dataset_final <- dataset_final %>%
+  mutate(region = countrycode(iso3c, origin = "iso3c", destination = "region"))
+
+# Excluir el caso atípico (Marshall Islands) y los territorios sin región asignable
+dataset_final <- dataset_final %>%
+  filter(iso3c != "MHL",
+         !is.na(region))
+# Excluir Marshall Islands: caso atípico que distorsiona la variable de exposición comercial
+# Excluir Channel Islands, Puerto Rico y Kosovo: territorios sin región asignable (no países soberanos),necesario para poder usar 'region' como control en la regresión
+
+# Verificar
+glimpse(dataset_final)
+```
+
+## **Paso 0.3** — Verificar los datos faltantes. 
+
+#verificar cuántas observaciones quedan utilizables para la regresión, antes de invertir tiempo en estimarla. IMportante para que la regresión tenga variable dependiente
+``` {r}
+dataset_final %>%
+  summarise(
+    total = n(),
+    sin_gdp_per_capita = sum(is.na(gdp_per_capita)),
+    sin_region = sum(is.na(region)),
+    sin_pct_yes = sum(is.na(pct_yes))
+  )
+
+```

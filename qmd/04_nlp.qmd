@@ -208,6 +208,17 @@ log_odds |>
   theme_minimal()
 ```
 
+```{r}
+ggsave(here("output", "figures", "nlp_log_odds.png"), 
+       width = 10, height = 6, dpi = 300, bg = "white")
+```
+
+``` {r}
+# Guardar la salida del análisis de texto para reutilizarla en 05_analisis.qmd
+saveRDS(textos_clasificados, here("data/processed/textos_clasificados.rds"))
+saveRDS(paises_alta, here("data/processed/paises_alta.rds"))
+```
+
 **Resultados principales.** El bloque de países con alta dependencia comercial con China apoya sistemáticamente las resoluciones sobre Palestina/Israel (*palestinian*, *occupy*, *territory*, *israeli*, *jerusalem*, *racial*, *discrimination*, *racism*). En cambio, rechaza o se abstiene en resoluciones que apuntan a países donde China tiene intereses estratégicos o ideológicos: Irán (*iran*, *islamic*), Cuba y Sudán. La diferencia es coherente con la hipótesis del trabajo: el voto del bloque no es aleatorio sino que sigue un patrón temático identificable. Esto refuerza el hallazgo del EDA (mayor `pct_yes` entre países de alta dependencia) agregando una dimensión cualitativa: qué tipo de resoluciones se apoyan y cuáles se rechazan.
 
 ## Conclusiones
