@@ -441,7 +441,8 @@ ggsave(here("output/figures/fig_3_3_heterogeneidad_pais_objeto.png"),
        fig_3_3, width = 9, height = 5, dpi = 300, bg = "white")
 ```
 
-```{fig_3_3 <- ggplot(df_plot, aes(x = pais_objeto, y = prop_apoya, fill = color_grupo)) +}
+```{r}
+fig_3_3 <- ggplot(df_plot, aes(x = pais_objeto, y = prop_apoya, fill = color_grupo)) +
   geom_hline(yintercept = linea_ref, linetype = "dashed",
              color = "gray50", linewidth = 0.7) +
   # ── FIX: usar el primer nivel del factor (la barra de arriba después del coord_flip)
