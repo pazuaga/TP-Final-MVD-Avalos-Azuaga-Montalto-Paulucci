@@ -4,9 +4,7 @@ format: html
 editor: visual
 ---
 
-# **Fase 0:** 
-
-## **Paso 0.1** — Carga de librerías
+## Carga de librerías
 
 ```{r}
 library(tidyverse)
@@ -14,7 +12,7 @@ library(here)
 library(countrycode)
 ```
 
-## **Paso 0.2** — cargar el dataset, agregar la región y excluir el caso atípico.
+## Cargar el dataset, agregar la región y excluir el caso atípico.
 
 ```{r}
 # Cargar el dataset ya construido (Etapa 3)
@@ -35,7 +33,7 @@ dataset_final <- dataset_final %>%
 glimpse(dataset_final)
 ```
 
-## **Paso 0.3** — Verificar los datos faltantes.
+## Verificar los datos faltantes.
 
 #verificar cuántas observaciones quedan utilizables para la regresión, antes de invertir tiempo en estimarla. IMportante para que la regresión tenga variable dependiente
 
@@ -48,9 +46,7 @@ dataset_final %>%
 
 ```
 
-# **Fase 1:**
-
-## Paso A — Regresión con controles
+## Regresión con controles
 
 Estimamos dos modelos de regresión lineal sobre el panel país-año. El primero incluye únicamente la exposición comercial con China como variable explicativa. El segundo incorpora controles por nivel de desarrollo (PBI per cápita), región geográfica y año, para descartar correlaciones espurias y enfrentar la objeción de que el efecto observado refleja desarrollo económico más que exposición a China.
 
@@ -94,7 +90,7 @@ tidy(modelo_1) |> filter(term == "china_dependence") |>
   select(modelo, estimate, std.error, p.value)
 ```
 
-## Paso B — Tabla a nivel resolución con país-objeto
+## Tabla a nivel resolución con país-objeto
 
 Construimos una tabla donde cada fila es una resolución de DDHH con su país-objeto identificado a partir de palabras clave en el texto descriptivo. Esto nos permite analizar si el efecto de la exposición comercial con China sobre el voto varía según el país al que apunta la resolución.
 
@@ -151,4 +147,481 @@ saveRDS(tabla_resoluciones, here("data/processed/tabla_resoluciones.rds"))
 
 cat("Tabla guardada con", nrow(tabla_resoluciones), "resoluciones y", 
     n_distinct(tabla_resoluciones$pais_objeto), "categorías de país-objeto.")
+```
+
+# Visualizaciones
+
+```{r}
+#| label: setup-fase3
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(patchwork)
+library(scales)
+library(here)
+
+# Paleta consistente para todo el trabajo
+# Coral para alta exposición / teal para baja exposición
+color_alta  <- "#D4603A"
+color_baja  <- "#3A9BAD"
+color_texto <- "#2C3E50"
+
+# Tema base compartido por todos los gráficos de Fase 3
+tema_tp <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13, color = color_texto),
+    plot.subtitle    = element_text(size = 10.5, color = "gray40"),
+    plot.caption     = element_text(size = 8.5, color = "gray50", hjust = 0),
+    axis.title       = element_text(size = 10.5),
+    legend.position  = "top",
+    legend.title     = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "gray92")
+  )
+
+# Aseguramos que exista la carpeta de salida
+dir.create(here("output/figures"), recursive = TRUE, showWarnings = FALSE)
+```
+
+------------------------------------------------------------------------
+
+## Comparación de grupos con incertidumbre
+
+*Reemplazamos el boxplot de medianas crudas.*
+
+```{r}
+#| label: fig-3-1-densidades
+#| fig-width: 10
+#| fig-height: 5
+#| message: false
+#| warning: false
+
+# ── Preparación: armar grupos por mediana ────────────────────
+datos_grupos <- dataset_final |>
+  filter(!is.na(china_dependence), !is.na(pct_yes)) |>
+  mutate(
+    grupo = if_else(
+      china_dependence >= median(china_dependence, na.rm = TRUE),
+      "Alta exposición",
+      "Baja exposición"
+    ),
+    grupo = factor(grupo, levels = c("Alta exposición", "Baja exposición"))
+  )
+
+# ── IC sobre la diferencia de medias (t-test de Welch) ───────
+# Como el factor tiene Alta primero, t.test calcula Alta - Baja
+# Por eso NO invertimos los signos del IC.
+test_ic <- t.test(pct_yes ~ grupo, data = datos_grupos)
+
+dif_media <- test_ic$estimate[[1]] - test_ic$estimate[[2]]  # Alta - Baja
+ic_inf    <- test_ic$conf.int[1]
+ic_sup    <- test_ic$conf.int[2]
+
+df_ic <- tibble(
+  estimacion = dif_media,
+  ic_inf     = ic_inf,
+  ic_sup     = ic_sup,
+  etiqueta   = "Alta − Baja\nexposición"
+)
+
+# ── Panel A: densidades superpuestas ─────────────────────────
+p_densidades <- ggplot(
+  datos_grupos,
+  aes(x = pct_yes, fill = grupo, color = grupo)
+) +
+  geom_density(alpha = 0.30, linewidth = 0.75) +
+  geom_vline(
+    data = datos_grupos |>
+      group_by(grupo) |>
+      summarise(media = mean(pct_yes), .groups = "drop"),
+    aes(xintercept = media, color = grupo),
+    linetype = "dashed", linewidth = 0.7
+  ) +
+  scale_fill_manual(values  = c("Alta exposición" = color_alta,
+                                "Baja exposición" = color_baja)) +
+  scale_color_manual(values = c("Alta exposición" = color_alta,
+                                "Baja exposición" = color_baja)) +
+  scale_x_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title    = "Distribución del apoyo a resoluciones de DDHH",
+    subtitle = "Países-año, 1995–2016  |  Corte por mediana de exposición comercial con China",
+    x        = "% de votos 'sí' en resoluciones de DDHH",
+    y        = "Densidad"
+  ) +
+  tema_tp
+
+# ── Panel B: IC sobre la diferencia ──────────────────────────
+p_ic <- ggplot(df_ic, aes(x = etiqueta, y = estimacion)) +
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "gray55", linewidth = 0.7) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup),
+                width = 0.12, linewidth = 0.9, color = color_texto) +
+  geom_point(size = 3.8, color = color_texto) +
+  annotate("text", x = 1, y = ic_sup + 0.005,
+           label = paste0(ifelse(dif_media > 0, "+", ""),
+                          round(dif_media * 100, 1), " pp"),
+           size = 3.8, fontface = "bold", color = color_texto, vjust = 0) +
+  scale_y_continuous(labels = percent_format(accuracy = 1),
+                     limits = c(-0.02, 0.15)) +
+  labs(title    = "Diferencia de medias",
+       subtitle = "IC 95% (Welch)",
+       x = NULL,
+       y = "Alta − Baja exposición") +
+  tema_tp
+
+# ── Composición ───────────────────────────────────────────────
+fig_3_1 <- p_densidades + p_ic +
+  plot_layout(widths = c(2.5, 1)) +
+  plot_annotation(
+    caption = "Fuente: panel país-año 1995–2016 | Banco Mundial · unvotes · Atlas of Economic Complexity"
+  )
+
+fig_3_1
+
+ggsave(here("output/figures/fig_3_1_densidades_ic.png"),
+       fig_3_1, width = 10, height = 4.8, dpi = 300, bg = "white")
+```
+
+------------------------------------------------------------------------
+
+## Asociación por quintiles (scatter agrupado)
+
+*Reemplaza el scatter saturado.*
+
+```{r}
+#| label: fig-3-2-bins
+#| fig-width: 7
+#| fig-height: 4.5
+#| message: false
+#| warning: false
+
+datos_bins <- dataset_final |>
+  filter(!is.na(china_dependence), !is.na(pct_yes)) |>
+  mutate(
+    bin_exposicion = cut_number(
+      china_dependence, n = 5,
+      labels = c("Q1\n(menor)", "Q2", "Q3", "Q4", "Q5\n(mayor)")
+    )
+  )
+
+resumen_bins <- datos_bins |>
+  group_by(bin_exposicion) |>
+  summarise(
+    n      = n(),
+    media  = mean(pct_yes),
+    se     = sd(pct_yes) / sqrt(n),
+    ic_inf = media - qt(0.975, df = n - 1) * se,
+    ic_sup = media + qt(0.975, df = n - 1) * se,
+    .groups = "drop"
+  )
+
+promedio_global <- mean(dataset_final$pct_yes, na.rm = TRUE)
+
+fig_3_2 <- ggplot(resumen_bins, aes(x = bin_exposicion, y = media)) +
+  geom_hline(yintercept = promedio_global, linetype = "dashed",
+             color = "gray55", linewidth = 0.7) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup),
+                width = 0.15, linewidth = 0.7, color = color_texto) +
+  geom_line(aes(group = 1), color = color_alta, linewidth = 0.85) +
+  geom_point(size = 4, color = color_alta) +
+  geom_text(aes(label = paste0("n=", n)),
+            vjust = -1.4, size = 2.9, color = "gray45") +
+  scale_y_continuous(labels = percent_format(accuracy = 1),
+                     limits = c(0.60, 0.82),
+                     breaks = seq(0.60, 0.80, 0.05)) +
+  labs(
+    title    = "Mayor exposición comercial, mayor apoyo a la agenda de DDHH",
+    subtitle = paste0("Promedio por quintil de exposición comercial con China  |  IC 95%  |  Línea = promedio global (",
+                      percent(promedio_global, accuracy = 1), ")"),
+    x        = "Quintil de exposición comercial con China",
+    y        = "% de votos 'sí' en resoluciones de DDHH",
+    caption  = "Fuente: panel país-año 1995–2016 | cada punto agrega países-año de un quintil"
+  ) +
+  tema_tp
+
+fig_3_2
+
+ggsave(here("output/figures/fig_3_2_bins_ic.png"),
+       fig_3_2, width = 7, height = 4.5, dpi = 300, bg = "white")
+```
+
+------------------------------------------------------------------------
+
+## Heterogeneidad por país-objeto 
+
+*Construimos `df_apoyo_por_pais` desde `tabla_resoluciones`*.
+
+```{r}
+#| label: df-apoyo-por-pais
+#| message: false
+#| warning: false
+
+# ── Categorías que efectivamente apuntan a un país --------------
+paises_objeto_validos <- c(
+  "Israel-Palestina", "Iran", "Cuba", "Sudan", "Bielorrusia",
+  "Congo", "Iraq", "Kosovo", "Ex-Yugoslavia", "Nigeria",
+  "Turkmenistan", "Uzbekistan", "Corea del Norte", "Siria", "Myanmar"
+)
+
+# ── Construcción del dataframe agregado --------------------------
+df_apoyo_por_pais <- tabla_resoluciones |>
+  filter(pais_objeto %in% paises_objeto_validos) |>
+  group_by(pais_objeto) |>
+  summarise(
+    n       = n(),
+    n_apoya = sum(grupo == "apoya"),
+    .groups = "drop"
+  ) |>
+  filter(n >= 3) |>   # incluimos Cuba (n=3), IC ancho pero relevante para la narrativa
+  mutate(
+    prop_apoya = n_apoya / n,
+    ic_inf = map2_dbl(n_apoya, n, ~ binom.test(.x, .y, conf.level = 0.95)$conf.int[1]),
+    ic_sup = map2_dbl(n_apoya, n, ~ binom.test(.x, .y, conf.level = 0.95)$conf.int[2])
+  ) |>
+  arrange(prop_apoya)
+
+print(df_apoyo_por_pais)
+```
+
+```{r}
+#| label: fig-3-3-heterogeneidad
+#| fig-width: 8.5
+#| fig-height: 5
+#| message: false
+#| warning: false
+
+df_plot <- df_apoyo_por_pais |>
+  mutate(
+    pais_objeto = fct_reorder(pais_objeto, prop_apoya),
+    color_grupo = case_when(
+      prop_apoya >= 0.70 ~ "Alto apoyo",
+      prop_apoya < 0.40  ~ "Bajo apoyo",
+      TRUE               ~ "Apoyo intermedio"
+    ),
+    color_grupo = factor(color_grupo,
+                         levels = c("Alto apoyo", "Apoyo intermedio", "Bajo apoyo"))
+  )
+
+linea_ref <- mean(df_apoyo_por_pais$prop_apoya)
+
+fig_3_3 <- ggplot(df_plot, aes(x = pais_objeto, y = prop_apoya, fill = color_grupo)) +
+  geom_hline(yintercept = linea_ref, linetype = "dashed",
+             color = "gray50", linewidth = 0.7) +
+  geom_col(width = 0.65, alpha = 0.90) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup),
+                width = 0.22, linewidth = 0.6, color = color_texto) +
+  geom_text(aes(label = paste0(percent(prop_apoya, accuracy = 1),
+                               "  (n=", n, ")")),
+            hjust = -0.15, size = 3.2, color = color_texto) +
+  scale_y_continuous(labels = percent_format(accuracy = 1),
+                     limits = c(0, 1.15), expand = c(0, 0)) +
+  scale_fill_manual(values = c(
+    "Alto apoyo"        = "#3A7D62",
+    "Apoyo intermedio"  = "#B8976A",
+    "Bajo apoyo"        = "#C0392B"
+  )) +
+  coord_flip() +
+  labs(
+    title    = "El apoyo del bloque no es uniforme: depende del país al que apunta la resolución",
+    subtitle = paste0("% de resoluciones en que el bloque de alta exposición votó a favor  |  IC 95%  |  Línea = promedio (",
+                      percent(linea_ref, accuracy = 1), ")"),
+    x        = NULL,
+    y        = "% de apoyo del bloque de alta exposición comercial",
+    caption  = "Fuente: resoluciones de DDHH 1995–2016 | bloque = percentil 75+ de exposición con China"
+  ) +
+  tema_tp +
+  theme(legend.position = "none",
+        panel.grid.major.y = element_blank())
+
+fig_3_3
+
+ggsave(here("output/figures/fig_3_3_heterogeneidad_pais_objeto.png"),
+       fig_3_3, width = 9, height = 5, dpi = 300, bg = "white")
+```
+
+```{fig_3_3 <- ggplot(df_plot, aes(x = pais_objeto, y = prop_apoya, fill = color_grupo)) +}
+  geom_hline(yintercept = linea_ref, linetype = "dashed",
+             color = "gray50", linewidth = 0.7) +
+  # ── FIX: usar el primer nivel del factor (la barra de arriba después del coord_flip)
+  annotate("text",
+           x = as.character(df_plot$pais_objeto[nrow(df_plot)]),
+           y = linea_ref + 0.025,
+           label = paste0("Promedio: ", percent(linea_ref, accuracy = 1)),
+           size = 2.9, color = "gray40", hjust = 0, fontface = "italic") +
+  geom_col(width = 0.65, alpha = 0.90) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup),
+                width = 0.22, linewidth = 0.6, color = color_texto) +
+  geom_text(aes(label = paste0(percent(prop_apoya, accuracy = 1),
+                               "  (n=", n, ")")),
+            hjust = -0.15, size = 3.2, color = color_texto) +
+  scale_y_continuous(labels = percent_format(accuracy = 1),
+                     limits = c(0, 1.15), expand = c(0, 0)) +
+  scale_fill_manual(values = c(
+    "Alto apoyo"        = "#3A7D62",
+    "Apoyo intermedio"  = "#B8976A",
+    "Bajo apoyo"        = "#C0392B"
+  )) +
+  coord_flip() +
+  labs(
+    title    = "El apoyo del bloque no es uniforme: depende del país al que apunta la resolución",
+    subtitle = "% de resoluciones en que el bloque de alta exposición votó a favor  |  IC 95%",
+    x        = NULL,
+    y        = "% de apoyo del bloque de alta exposición comercial",
+    caption  = "Fuente: resoluciones de DDHH 1995–2016 | bloque = percentil 75+ de exposición con China"
+  ) +
+  tema_tp +
+  theme(legend.position = "none",
+        panel.grid.major.y = element_blank())
+```
+
+------------------------------------------------------------------------
+
+## Evolución temporal reetiquetada
+
+```{r}
+#| label: fig-3-4a-temporal
+#| fig-width: 8
+#| fig-height: 6.5
+#| message: false
+#| warning: false
+
+serie_temporal <- dataset_final |>
+  group_by(year) |>
+  summarise(
+    exposicion_promedio = mean(china_dependence, na.rm = TRUE),
+    pct_yes_promedio    = mean(pct_yes, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+p_exp <- ggplot(serie_temporal, aes(x = year, y = exposicion_promedio)) +
+  geom_line(color = color_baja, linewidth = 0.9) +
+  geom_point(color = color_baja, size = 2.5) +
+  scale_x_continuous(breaks = seq(1995, 2016, 5)) +
+  scale_y_continuous(labels = label_number(accuracy = 0.01)) +
+  labs(title    = "La exposición comercial con China creció de forma sostenida",
+       subtitle = "Promedio global por año, 1995–2016",
+       x = "Año",
+       y = "Exposición comercial con China\n(fracción del PBI, promedio global)") +
+  tema_tp
+
+p_votos <- ggplot(serie_temporal, aes(x = year, y = pct_yes_promedio)) +
+  geom_line(color = color_alta, linewidth = 0.9) +
+  geom_point(color = color_alta, size = 2.5) +
+  scale_x_continuous(breaks = seq(1995, 2016, 5)) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title    = "…pero el apoyo a la agenda de DDHH no siguió la misma tendencia",
+       subtitle = "Promedio global del % de votos 'sí' por año, 1995–2016",
+       x = "Año",
+       y = "Apoyo a la agenda de DDHH\n(% de votos 'sí', promedio global)") +
+  tema_tp
+
+fig_3_4a <- p_exp / p_votos +
+  plot_annotation(
+    caption = "Fuente: panel país-año 1995–2016 | Banco Mundial · unvotes · Atlas of Economic Complexity"
+  )
+
+fig_3_4a
+
+ggsave(here("output/figures/fig_3_4a_temporal_reetiquetado.png"),
+       fig_3_4a, width = 8, height = 6.5, dpi = 300, bg = "white")
+```
+
+------------------------------------------------------------------------
+
+## Log-odds reetiquetado
+
+*Recomputamos `df_logodds` desde `textos_clasificados` para mantener este notebook autocontenido.*
+
+```{r}
+#| label: fig-3-4b-logodds
+#| fig-width: 9
+#| fig-height: 6
+#| message: false
+#| warning: false
+
+library(tidytext)
+library(tidylo)
+library(udpipe)
+
+# ── 1. Cargar (o descargar) el modelo udpipe ──────────────────
+modelo_dir <- here("data/raw")
+dir.create(modelo_dir, recursive = TRUE, showWarnings = FALSE)
+
+modelo_existente <- list.files(modelo_dir, pattern = "english.*\\.udpipe$",
+                               full.names = TRUE)
+
+if (length(modelo_existente) == 0) {
+  cat("Descargando modelo udpipe (~15MB, solo la primera vez)...\n")
+  dl <- udpipe_download_model(language = "english", model_dir = modelo_dir)
+  modelo_path <- dl$file_model
+} else {
+  modelo_path <- modelo_existente[1]
+}
+
+modelo_udpipe <- udpipe_load_model(modelo_path)
+
+# ── 2. Anotar los textos (lematizar + POS tagging) ────────────
+anotacion <- udpipe_annotate(
+  modelo_udpipe,
+  x = textos_clasificados$descr,
+  doc_id = as.character(textos_clasificados$rcid)
+) |>
+  as.data.frame()
+
+# ── 3. Filtrar a lemas informativos (sustantivos, propios, adjetivos)
+lemmas <- anotacion |>
+  filter(upos %in% c("NOUN", "PROPN", "ADJ"),
+         !is.na(lemma),
+         nchar(lemma) > 2) |>
+  mutate(lemma = str_to_lower(lemma)) |>
+  inner_join(
+    textos_clasificados |>
+      mutate(doc_id = as.character(rcid)) |>
+      select(doc_id, grupo),
+    by = "doc_id"
+  )
+
+# ── 4. Log odds ratio ponderado por grupo ────────────────────
+df_logodds <- lemmas |>
+  count(grupo, lemma, sort = TRUE) |>
+  bind_log_odds(grupo, lemma, n)
+
+# ── 5. Top 15 lemas por grupo ────────────────────────────────
+df_top <- df_logodds |>
+  group_by(grupo) |>
+  slice_max(log_odds_weighted, n = 15) |>
+  ungroup() |>
+  mutate(
+    panel = case_when(
+      grupo == "apoya"            ~ "Resoluciones que el bloque apoya",
+      grupo == "rechaza_abstiene" ~ "Resoluciones que rechaza o se abstiene"
+    ),
+    lemma = reorder_within(lemma, log_odds_weighted, panel)
+  )
+
+# ── 6. Gráfico ────────────────────────────────────────────────
+fig_3_4b <- ggplot(df_top, aes(x = lemma, y = log_odds_weighted, fill = grupo)) +
+  geom_col(alpha = 0.88, show.legend = FALSE) +
+  coord_flip() +
+  facet_wrap(~ panel, scales = "free_y") +
+  scale_x_reordered() +
+  scale_fill_manual(values = c("apoya" = color_alta,
+                               "rechaza_abstiene" = color_baja)) +
+  labs(
+    title    = "Términos más distintivos según la posición del bloque de alta exposición",
+    subtitle = "Log odds ratio ponderado | Resoluciones de DDHH, Asamblea General de la ONU, 1995–2016",
+    x        = NULL,
+    y        = "Log Odds Ratio ponderado",
+    caption  = "Bloque de alta exposición = países en el percentil 75+ de exposición comercial con China"
+  ) +
+  tema_tp +
+  theme(strip.text    = element_text(face = "bold", size = 10.5),
+        panel.spacing = unit(1.5, "lines"))
+
+fig_3_4b
+
+ggsave(here("output/figures/fig_3_4b_logodds_reetiquetado.png"),
+       fig_3_4b, width = 9, height = 6, dpi = 300, bg = "white")
 ```
