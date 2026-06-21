@@ -136,6 +136,7 @@ La lematización colapsa formas variantes de la misma palabra (*occupied / occup
 #Descargamos el modelo de inglés
 ud_model <- udpipe_download_model(language = "english")
 ud_model <- udpipe_load_model(ud_model$file_model)
+
 #Lematizamos
 anotaciones <- udpipe_annotate(ud_model, 
                                 x = tokens_limpios$word,
@@ -144,12 +145,23 @@ anotaciones <- udpipe_annotate(ud_model,
   select(doc_id, lemma) |>
   mutate(doc_id = as.integer(doc_id))
 
+# Lista de lemas a excluir: artefactos de lematización + vocabulario
+# institucional de la ONU + términos de DDHH ubicuos en el corpus
+# (al estar en todas las resoluciones, no distinguen entre grupos)
+lemas_a_excluir <- c(
+  "re", "resol",  "iii",                                  # artefactos (los que ya tenías)
+  "assembly", "general", "resolution", "draft",     # procedimiento ONU
+  "vote", "nation", "united", "session", "agenda",
+  "committee", "report", "adopt", "amendment",
+  "right", "human", "situation"                     # términos de DDHH ubicuos
+)
+
 tokens_lematizados <- tokens_limpios |>
   mutate(doc_id = row_number()) |>
   left_join(anotaciones, by = "doc_id") |>
   select(-word) |>
   filter(nchar(trimws(lemma)) > 2,
-       !lemma %in% c("re", "resol"))
+       !lemma %in% lemas_a_excluir)
 ```
 
 ## TF-IDF
